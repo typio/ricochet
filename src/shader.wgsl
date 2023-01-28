@@ -8,7 +8,19 @@ struct VertexOutput {
     @location(0) cameraPos: vec3<f32>,
     @location(1) cameraDir: vec3<f32>,
     @location(2) sphere: vec4<f32>,
+    @location(3) screenResolution: vec2<f32>,
 };
+
+struct UBO {
+    screenResolution: vec2<f32>,
+    cameraPos: vec3<f32>,
+    cameraDir: vec3<f32>,
+    sphere: vec4<f32>,
+
+}
+
+@group(0) @binding(0)
+var<uniform> uniforms: UBO;
 
 @vertex
 fn vs_main(
@@ -16,20 +28,23 @@ fn vs_main(
          -> VertexOutput {
     var out: VertexOutput;
     out.pos =  vec4<f32>(inPos, 1.0);
-    out.cameraPos = vec3(-3.,-3.,0.);
-    out.cameraDir = vec3(1.,1.,0.);
-    out.sphere = vec4(0.,0.,0.,2.);
+    out.cameraPos = uniforms.cameraPos;
+    out.cameraDir = uniforms.cameraDir;
+    out.sphere = uniforms.sphere;
+    out.screenResolution = uniforms.screenResolution;
     return out;
 }
-
-
 
 @fragment
 fn fs_main(@builtin(position) coords: vec4<f32>,
         @location(0) cameraPos: vec3<f32>,
         @location(1) cameraDir: vec3<f32>,
         @location(2) sphere: vec4<f32>,
+        @location(3) screenResolution: vec2<f32>,
         ) -> @location(0) vec4<f32> {
+    let uv = vec2<f32>(1.,-1.) * (coords.xy/ screenResolution) + vec2<f32>(0.,1.);
+
+    return vec4(uv,0.,0.);
     let cameraRay = cameraPos - coords.xyz;
     let a = cameraRay.x * cameraRay.x + cameraRay.y * cameraRay.y;
     let b = 2 * cameraPos.x * cameraRay.x + 2 * cameraPos.y * cameraRay.y;

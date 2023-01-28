@@ -2,10 +2,6 @@ import * as _webgpu_types from "@webgpu/types";
 
 import shaderWGSL from "./shader.wgsl?raw";
 
-let rayEmitterVector = new Float32Array([3, 3, 0, 1, 1, 0]);
-
-let spherePosition = new Float32Array([0, 0, 0, 2]);
-
 export default class Renderer {
     canvas: HTMLCanvasElement;
 
@@ -20,8 +16,12 @@ export default class Renderer {
     depthTextureView: GPUTextureView;
 
     positionBuffer: GPUBuffer;
-    rayEmitterBuffer: GPUBuffer;
+    cameraPosition: GPUBuffer;
+    cameraDirection: GPUBuffer;
     spherePositionBuffer: GPUBuffer;
+    screenResolutionBuffer: GPUBuffer;
+    uniformBindGroup: GPUBindGroup;
+    uniformBindGroupLayout: GPUBindGroupLayout;
     shaderModule: GPUShaderModule;
     pipeline: GPURenderPipeline;
 
@@ -34,8 +34,13 @@ export default class Renderer {
 
     async start() {
         if (await this.initializeAPI()) {
-            this.resizeBackings();
+            window.addEventListener("resize", () => {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+                this.resizeBackings();
+            });
             await this.initializeResources();
+            this.resizeBackings();
             this.render();
         }
     }
@@ -60,46 +65,52 @@ export default class Renderer {
         return true;
     }
 
-    async initializeResources() {
-        const createBuffer = (
-            arr: Float32Array | Uint16Array,
-            usage: number,
-            label?: string
-        ) => {
-            let desc = {
-                label,
-                size: (arr.byteLength + 3) & ~3,
-                usage,
-                mappedAtCreation: true,
-            };
-            let buffer = this.device.createBuffer(desc);
-            const writeArray =
-                arr instanceof Uint16Array
-                    ? new Uint16Array(buffer.getMappedRange())
-                    : new Float32Array(buffer.getMappedRange());
-            writeArray.set(arr);
-            buffer.unmap();
-            return buffer;
+    createBuffer = (
+        arr: Float32Array | Uint16Array,
+        usage: number,
+        label?: string
+    ) => {
+        let desc = {
+            label,
+            // WARN: This isn't great, quick fix for uniform needing min 64 bytes
+            size: Math.max(64, (arr.byteLength + 3) & ~3),
+            usage,
+            mappedAtCreation: true,
         };
-
-        this.indexBuffer = createBuffer(
-            new Uint16Array([0, 1, 2]),
-            GPUBufferUsage.INDEX
-        );
-        this.positionBuffer = createBuffer(
+        let buffer = this.device.createBuffer(desc);
+        const writeArray =
+            arr instanceof Uint16Array
+                ? new Uint16Array(buffer.getMappedRange())
+                : new Float32Array(buffer.getMappedRange());
+        writeArray.set(arr);
+        buffer.unmap();
+        return buffer;
+    };
+    async initializeResources() {
+        this.positionBuffer = this.createBuffer(
             new Float32Array([3.0, -3.0, 0.0, -3.0, -3.0, 0.0, 0.0, 3.0, 0.0]),
             GPUBufferUsage.VERTEX,
             "Position Buffer"
         );
-        this.rayEmitterBuffer = createBuffer(
-            rayEmitterVector,
+        this.cameraPosition = this.createBuffer(
+            new Float32Array([-3, -3, 0]),
             GPUBufferUsage.UNIFORM,
-            "Ray Emitter Vector"
+            "Camera Position Buffer"
         );
-        this.spherePositionBuffer = createBuffer(
-            spherePosition,
-            GPUBufferUsage.UNIFORM,
+        this.cameraDirection = this.createBuffer(
+            new Float32Array([1, 1, 0]),
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            "Camera Direction Buffer"
+        );
+        this.spherePositionBuffer = this.createBuffer(
+            new Float32Array([0, 0, 0, 2]),
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             "Sphere Position Buffer"
+        );
+        this.screenResolutionBuffer = this.createBuffer(
+            new Float32Array([this.canvas.width, this.canvas.height]),
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            "Screen Resolution Buffer"
         );
 
         const shaderDesc = {
@@ -112,30 +123,10 @@ export default class Renderer {
             offset: 0,
             format: "float32x3",
         };
-        const rayEmitterVectorAttribDesc: GPUVertexAttribute = {
-            shaderLocation: 1,
-            offset: 0,
-            format: "float32x3",
-        };
-        const spherePositionAttribDesc: GPUVertexAttribute = {
-            shaderLocation: 2,
-            offset: 0,
-            format: "float32x4",
-        };
 
         const positionBufferDesc: GPUVertexBufferLayout = {
             attributes: [positionAttribDesc],
             arrayStride: 3 * Float32Array.BYTES_PER_ELEMENT,
-            stepMode: "vertex",
-        };
-        const rayEmitterVectorBufferDesc: GPUVertexBufferLayout = {
-            attributes: [rayEmitterVectorAttribDesc],
-            arrayStride: 3 * Float32Array.BYTES_PER_ELEMENT,
-            stepMode: "vertex",
-        };
-        const spherePositionBufferDesc: GPUVertexBufferLayout = {
-            attributes: [spherePositionAttribDesc],
-            arrayStride: 4 * Float32Array.BYTES_PER_ELEMENT,
             stepMode: "vertex",
         };
 
@@ -144,8 +135,63 @@ export default class Renderer {
             depthCompare: "less",
             format: "depth24plus-stencil8",
         };
+        this.uniformBindGroupLayout = this.device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: {},
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: {},
+                },
+                {
+                    binding: 2,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: {},
+                },
+                {
+                    binding: 3,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: {},
+                },
+            ],
+        });
 
-        const pipelineLayoutDesc = { bindGroupLayouts: [] };
+        this.uniformBindGroup = this.device.createBindGroup({
+            layout: this.uniformBindGroupLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: {
+                        buffer: this.screenResolutionBuffer,
+                    },
+                },
+                {
+                    binding: 1,
+                    resource: {
+                        buffer: this.cameraPosition,
+                    },
+                },
+                {
+                    binding: 2,
+                    resource: {
+                        buffer: this.cameraDirection,
+                    },
+                },
+                {
+                    binding: 3,
+                    resource: {
+                        buffer: this.spherePositionBuffer,
+                    },
+                },
+            ],
+        });
+        const pipelineLayoutDesc = {
+            bindGroupLayouts: [this.uniformBindGroupLayout],
+        };
         const layout = this.device.createPipelineLayout(pipelineLayoutDesc);
 
         const vertex: GPUVertexState = {
@@ -203,6 +249,41 @@ export default class Renderer {
 
         this.depthTexture = this.device.createTexture(depthTextureDesc);
         this.depthTextureView = this.depthTexture.createView();
+
+        this.screenResolutionBuffer = this.createBuffer(
+            new Float32Array([this.canvas.width, this.canvas.height]),
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            "Screen Resolution Buffer"
+        );
+        this.uniformBindGroup = this.device.createBindGroup({
+            layout: this.uniformBindGroupLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: {
+                        buffer: this.screenResolutionBuffer,
+                    },
+                },
+                {
+                    binding: 1,
+                    resource: {
+                        buffer: this.cameraPosition,
+                    },
+                },
+                {
+                    binding: 2,
+                    resource: {
+                        buffer: this.cameraDirection,
+                    },
+                },
+                {
+                    binding: 3,
+                    resource: {
+                        buffer: this.spherePositionBuffer,
+                    },
+                },
+            ],
+        });
     }
 
     encodeCommands() {
@@ -247,6 +328,7 @@ export default class Renderer {
             this.canvas.height
         );
         this.passEncoder.setVertexBuffer(0, this.positionBuffer);
+        this.passEncoder.setBindGroup(0, this.uniformBindGroup);
         this.passEncoder.draw(3, 1, 0, 0);
         this.passEncoder.end();
 
