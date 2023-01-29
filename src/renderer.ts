@@ -17,10 +17,12 @@ export default class Renderer {
     depthTextureView: GPUTextureView;
 
     sphere: Float32Array;
+    lightDir: Float32Array;
 
     positionBuffer: GPUBuffer;
-    rayOrigin: GPUBuffer;
+    rayOriginBuffer: GPUBuffer;
     sphereBuffer: GPUBuffer;
+    lightDirBuffer: GPUBuffer;
     screenResolutionBuffer: GPUBuffer;
     uniformBindGroup: GPUBindGroup;
     uniformBindGroupLayout: GPUBindGroupLayout;
@@ -38,8 +40,14 @@ export default class Renderer {
         if (await this.initializeAPI()) {
             window.addEventListener("resize", () => {
                 this.canvas.width = window.innerWidth;
-                this.canvas.height = window.innerWidth;
+                this.canvas.height = window.innerHeight;
                 this.resizeBackings();
+            });
+            window.addEventListener("mousemove", (t) => {
+                let x = (t.x / this.canvas.width) * 2 - 1;
+                let y = (t.y / this.canvas.height) * 2 - 1;
+                this.lightDir = new Float32Array([-x * 3, y * 3, -1]);
+                this.setUniforms();
             });
             await this.initializeResources();
             this.resizeBackings();
@@ -99,7 +107,7 @@ export default class Renderer {
             undefined,
             "Screen Resolution Buffer"
         );
-        this.rayOrigin = this.createBuffer(
+        this.rayOriginBuffer = this.createBuffer(
             new Float32Array([0, 0, 4]),
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
@@ -110,6 +118,12 @@ export default class Renderer {
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
             "Sphere Position Buffer"
+        );
+        this.lightDirBuffer = this.createBuffer(
+            this.lightDir,
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            undefined,
+            "Camera Position Buffer"
         );
 
         this.uniformBindGroupLayout = this.device.createBindGroupLayout({
@@ -129,6 +143,11 @@ export default class Renderer {
                     visibility: GPUShaderStage.VERTEX,
                     buffer: {},
                 },
+                {
+                    binding: 3,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: {},
+                },
             ],
         });
 
@@ -144,13 +163,19 @@ export default class Renderer {
                 {
                     binding: 1,
                     resource: {
-                        buffer: this.rayOrigin,
+                        buffer: this.rayOriginBuffer,
                     },
                 },
                 {
                     binding: 2,
                     resource: {
                         buffer: this.sphereBuffer,
+                    },
+                },
+                {
+                    binding: 3,
+                    resource: {
+                        buffer: this.lightDirBuffer,
                     },
                 },
             ],
@@ -166,6 +191,8 @@ export default class Renderer {
         );
 
         this.sphere = new Float32Array([0, 0, 0, 2]);
+
+        this.lightDir = new Float32Array([-1, -1, -1]);
 
         const shaderDesc = {
             code: shaderWGSL,
@@ -308,6 +335,7 @@ export default class Renderer {
     }
     startTime = Date.now();
 
+    perfTime = performance.now();
     render = () => {
         let dx = Math.cos((Date.now() - this.startTime) / 300) * 2 - 1;
         let dy = Math.sin((Date.now() - this.startTime) / 200) * 2 - 1;
@@ -320,5 +348,8 @@ export default class Renderer {
         this.encodeCommands();
 
         requestAnimationFrame(this.render);
+        let newPerfTime = performance.now();
+        // console.log(`${(1000 / (newPerfTime - this.perfTime)).toFixed(3)}fps`);
+        this.perfTime = newPerfTime;
     };
 }
