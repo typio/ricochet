@@ -1,3 +1,4 @@
+// @ts-ignore
 import * as _webgpu_types from "@webgpu/types";
 
 import shaderWGSL from "./shader.wgsl?raw";
@@ -15,10 +16,11 @@ export default class Renderer {
     depthTexture: GPUTexture;
     depthTextureView: GPUTextureView;
 
+    sphere: Float32Array;
+
     positionBuffer: GPUBuffer;
-    cameraPosition: GPUBuffer;
-    cameraDirection: GPUBuffer;
-    spherePositionBuffer: GPUBuffer;
+    rayOrigin: GPUBuffer;
+    sphereBuffer: GPUBuffer;
     screenResolutionBuffer: GPUBuffer;
     uniformBindGroup: GPUBindGroup;
     uniformBindGroupLayout: GPUBindGroupLayout;
@@ -28,7 +30,7 @@ export default class Renderer {
     commandEncoder: GPUCommandEncoder;
     passEncoder: GPURenderPassEncoder;
 
-    constructor(canvas) {
+    constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
     }
 
@@ -36,7 +38,7 @@ export default class Renderer {
         if (await this.initializeAPI()) {
             window.addEventListener("resize", () => {
                 this.canvas.width = window.innerWidth;
-                this.canvas.height = window.innerHeight;
+                this.canvas.height = window.innerWidth;
                 this.resizeBackings();
             });
             await this.initializeResources();
@@ -52,7 +54,10 @@ export default class Renderer {
                 return false;
             }
 
-            this.adapter = await entry.requestAdapter();
+            this.adapter = ((adapter) => {
+                if (adapter === null) throw new Error("Failed to get adapter");
+                else return adapter;
+            })(await entry.requestAdapter());
 
             this.device = await this.adapter.requestDevice();
 
@@ -68,12 +73,12 @@ export default class Renderer {
     createBuffer = (
         arr: Float32Array | Uint16Array,
         usage: number,
+        size?: number,
         label?: string
     ) => {
         let desc = {
             label,
-            // WARN: This isn't great, quick fix for uniform needing min 64 bytes
-            size: Math.max(64, (arr.byteLength + 3) & ~3),
+            size: size ?? (arr.byteLength + 3) & ~3,
             usage,
             mappedAtCreation: true,
         };
@@ -86,32 +91,81 @@ export default class Renderer {
         buffer.unmap();
         return buffer;
     };
+
+    setUniforms = () => {
+        this.screenResolutionBuffer = this.createBuffer(
+            new Float32Array([this.canvas.width, this.canvas.height]),
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            undefined,
+            "Screen Resolution Buffer"
+        );
+        this.rayOrigin = this.createBuffer(
+            new Float32Array([0, 0, 4]),
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            undefined,
+            "Camera Position Buffer"
+        );
+        this.sphereBuffer = this.createBuffer(
+            this.sphere,
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            undefined,
+            "Sphere Position Buffer"
+        );
+
+        this.uniformBindGroupLayout = this.device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: {},
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: {},
+                },
+                {
+                    binding: 2,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: {},
+                },
+            ],
+        });
+
+        this.uniformBindGroup = this.device.createBindGroup({
+            layout: this.uniformBindGroupLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: {
+                        buffer: this.screenResolutionBuffer,
+                    },
+                },
+                {
+                    binding: 1,
+                    resource: {
+                        buffer: this.rayOrigin,
+                    },
+                },
+                {
+                    binding: 2,
+                    resource: {
+                        buffer: this.sphereBuffer,
+                    },
+                },
+            ],
+        });
+    };
+
     async initializeResources() {
         this.positionBuffer = this.createBuffer(
             new Float32Array([3.0, -3.0, 0.0, -3.0, -3.0, 0.0, 0.0, 3.0, 0.0]),
             GPUBufferUsage.VERTEX,
+            undefined,
             "Position Buffer"
         );
-        this.cameraPosition = this.createBuffer(
-            new Float32Array([-3, -3, 0]),
-            GPUBufferUsage.UNIFORM,
-            "Camera Position Buffer"
-        );
-        this.cameraDirection = this.createBuffer(
-            new Float32Array([1, 1, 0]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            "Camera Direction Buffer"
-        );
-        this.spherePositionBuffer = this.createBuffer(
-            new Float32Array([0, 0, 0, 2]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            "Sphere Position Buffer"
-        );
-        this.screenResolutionBuffer = this.createBuffer(
-            new Float32Array([this.canvas.width, this.canvas.height]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            "Screen Resolution Buffer"
-        );
+
+        this.sphere = new Float32Array([0, 0, 0, 2]);
 
         const shaderDesc = {
             code: shaderWGSL,
@@ -135,60 +189,9 @@ export default class Renderer {
             depthCompare: "less",
             format: "depth24plus-stencil8",
         };
-        this.uniformBindGroupLayout = this.device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.VERTEX,
-                    buffer: {},
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.VERTEX,
-                    buffer: {},
-                },
-                {
-                    binding: 2,
-                    visibility: GPUShaderStage.VERTEX,
-                    buffer: {},
-                },
-                {
-                    binding: 3,
-                    visibility: GPUShaderStage.VERTEX,
-                    buffer: {},
-                },
-            ],
-        });
 
-        this.uniformBindGroup = this.device.createBindGroup({
-            layout: this.uniformBindGroupLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: {
-                        buffer: this.screenResolutionBuffer,
-                    },
-                },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: this.cameraPosition,
-                    },
-                },
-                {
-                    binding: 2,
-                    resource: {
-                        buffer: this.cameraDirection,
-                    },
-                },
-                {
-                    binding: 3,
-                    resource: {
-                        buffer: this.spherePositionBuffer,
-                    },
-                },
-            ],
-        });
+        this.setUniforms();
+
         const pipelineLayoutDesc = {
             bindGroupLayouts: [this.uniformBindGroupLayout],
         };
@@ -230,7 +233,10 @@ export default class Renderer {
 
     resizeBackings() {
         if (!this.context) {
-            this.context = this.canvas.getContext("webgpu");
+            this.context = ((context) => {
+                if (context === null) throw new Error("Failed to get canvas context");
+                else return context;
+            })(this.canvas.getContext("webgpu"));
             const canvasConfig: GPUCanvasConfiguration = {
                 device: this.device,
                 format: "bgra8unorm",
@@ -249,47 +255,13 @@ export default class Renderer {
 
         this.depthTexture = this.device.createTexture(depthTextureDesc);
         this.depthTextureView = this.depthTexture.createView();
-
-        this.screenResolutionBuffer = this.createBuffer(
-            new Float32Array([this.canvas.width, this.canvas.height]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            "Screen Resolution Buffer"
-        );
-        this.uniformBindGroup = this.device.createBindGroup({
-            layout: this.uniformBindGroupLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: {
-                        buffer: this.screenResolutionBuffer,
-                    },
-                },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: this.cameraPosition,
-                    },
-                },
-                {
-                    binding: 2,
-                    resource: {
-                        buffer: this.cameraDirection,
-                    },
-                },
-                {
-                    binding: 3,
-                    resource: {
-                        buffer: this.spherePositionBuffer,
-                    },
-                },
-            ],
-        });
+        this.setUniforms();
     }
 
     encodeCommands() {
         let colorAttachment: GPURenderPassColorAttachment = {
             view: this.colorTextureView,
-            clearValue: { r: 0.5, g: 0.75, b: 0.95, a: 1 },
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
             loadOp: "clear",
             storeOp: "store",
         };
@@ -334,8 +306,14 @@ export default class Renderer {
 
         this.queue.submit([this.commandEncoder.finish()]);
     }
+    startTime = Date.now();
 
     render = () => {
+        let dx = Math.cos((Date.now() - this.startTime) / 300) * 2 - 1;
+        let dy = Math.sin((Date.now() - this.startTime) / 200) * 2 - 1;
+        let dz = Math.sin((Date.now() - this.startTime) / 400) / 5;
+        this.sphere = new Float32Array([1 + dx, 1 + dy, -0.1 + dz, 1.5]);
+        this.setUniforms();
         this.colorTexture = this.context.getCurrentTexture();
         this.colorTextureView = this.colorTexture.createView();
 
