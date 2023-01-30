@@ -37,8 +37,6 @@ export default class Camera {
         this.recalculateView();
 
         const upDirection = glm.vec3.fromValues(0, 1, 0);
-        let rightDirection = glm.vec3.create();
-        glm.vec3.cross(rightDirection, this.forwardDirection, upDirection);
 
         document.addEventListener("mousedown", async (e) => {
             // right click
@@ -65,6 +63,8 @@ export default class Camera {
         });
 
         const translateCamera = (e: KeyboardEvent) => {
+            let rightDirection = glm.vec3.create();
+            glm.vec3.cross(rightDirection, this.forwardDirection, upDirection);
             if (e.code === "KeyW")
                 glm.vec3.scaleAndAdd(
                     this.position,
@@ -114,6 +114,8 @@ export default class Camera {
         };
 
         const rotateCamera = (e: MouseEvent) => {
+            let rightDirection = glm.vec3.create();
+            glm.vec3.cross(rightDirection, this.forwardDirection, upDirection);
             let delta = glm.vec2.fromValues(e.movementX, e.movementY);
             glm.vec2.scale(delta, delta, 0.001);
 

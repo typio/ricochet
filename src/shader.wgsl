@@ -1,33 +1,33 @@
 struct Sphere {
-    pos: vec3f,
+    pos: vec3<f32>,
     r: f32,
 }
 
-@group(0) @binding(0) var<uniform> screenResolution: vec2f;
-@group(0) @binding(1) var<uniform> rayOrigin: vec3f;
-@group(0) @binding(2) var<uniform> inverseProjection: mat4x4f;
-@group(0) @binding(3) var<uniform> inverseView: mat4x4f;
+@group(0) @binding(0) var<uniform> screenResolution: vec2<f32>;
+@group(0) @binding(1) var<uniform> rayOrigin: vec3<f32>;
+@group(0) @binding(2) var<uniform> inverseProjection: mat4x4<f32>;
+@group(0) @binding(3) var<uniform> inverseView: mat4x4<f32>;
 @group(0) @binding(4) var<uniform> sphere: Sphere;
-@group(0) @binding(5) var<uniform> lightDir: vec3f;
+@group(0) @binding(5) var<uniform> lightDir: vec3<f32>;
 
 struct VertexOutput {
-    @builtin(position) pos: vec4f,
+    @builtin(position) pos: vec4<f32>,
 };
 
 @vertex
 fn vs_main(
-        @location(0) inPos: vec3f)
+        @location(0) inPos: vec3<f32>)
          -> VertexOutput {
     var out: VertexOutput;
-    out.pos = vec4f(inPos, 1.0);
+    out.pos = vec4<f32>(inPos, 1.0);
     return out;
 }
 
 @fragment
-fn fs_main(@builtin(position) coords: vec4f,
-        ) -> @location(0) vec4f {
+fn  fs_main(@builtin(position) coords: vec4<f32>,
+        ) -> @location(0) vec4<f32> {
 
-    let uv = 2 * vec2f(1., -1.) * ((coords.xy * vec2(screenResolution.x/screenResolution.y,1.)) / screenResolution) + vec2<f32>(-1.,1.);
+    let uv = 2 * vec2(1., -1.) * ((coords.xy * vec2(screenResolution.x/screenResolution.y,1.)) / screenResolution) + vec2(-1.,1.);
 
     let targ = inverseProjection * vec4(uv.x, uv.y,1,1);
     // return vec4(uv,0.,0.);
