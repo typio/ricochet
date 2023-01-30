@@ -1,6 +1,6 @@
 # ricochet
 
-> Real-Time Ray-Tracing Renderer
+> Real-Time Ray Tracing Renderer
 
 ## Resources
 

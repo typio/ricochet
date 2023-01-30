@@ -1,10 +1,12 @@
 // @ts-ignore
 import * as _webgpu_types from "@webgpu/types";
 
+import Camera from "./camera";
 import shaderWGSL from "./shader.wgsl?raw";
 
 export default class Renderer {
     canvas: HTMLCanvasElement;
+    camera: Camera;
 
     adapter: GPUAdapter;
     device: GPUDevice;
@@ -21,6 +23,8 @@ export default class Renderer {
 
     positionBuffer: GPUBuffer;
     rayOriginBuffer: GPUBuffer;
+    inverseProjectionBuffer: GPUBuffer;
+    inverseViewBuffer: GPUBuffer;
     sphereBuffer: GPUBuffer;
     lightDirBuffer: GPUBuffer;
     screenResolutionBuffer: GPUBuffer;
@@ -32,8 +36,9 @@ export default class Renderer {
     commandEncoder: GPUCommandEncoder;
     passEncoder: GPURenderPassEncoder;
 
-    constructor(canvas: HTMLCanvasElement) {
+    constructor(canvas: HTMLCanvasElement, camera: Camera) {
         this.canvas = canvas;
+        this.camera = camera;
     }
 
     async start() {
@@ -42,12 +47,6 @@ export default class Renderer {
                 this.canvas.width = window.innerWidth;
                 this.canvas.height = window.innerHeight;
                 this.resizeBackings();
-            });
-            window.addEventListener("mousemove", (t) => {
-                let x = (t.x / this.canvas.width) * 2 - 1;
-                let y = (t.y / this.canvas.height) * 2 - 1;
-                this.lightDir = new Float32Array([-x * 3, y * 3, -1]);
-                this.setUniforms();
             });
             await this.initializeResources();
             this.resizeBackings();
@@ -59,6 +58,9 @@ export default class Renderer {
         try {
             const entry: GPU = navigator.gpu;
             if (!entry) {
+                alert(
+                    "Failed to connect to GPU, please try Chrome browser if you aren't using it already."
+                );
                 return false;
             }
 
@@ -108,10 +110,22 @@ export default class Renderer {
             "Screen Resolution Buffer"
         );
         this.rayOriginBuffer = this.createBuffer(
-            new Float32Array([0, 0, 4]),
+            this.camera.position as Float32Array,
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
             "Camera Position Buffer"
+        );
+        this.inverseProjectionBuffer = this.createBuffer(
+            this.camera.inverseProjection as Float32Array,
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            undefined,
+            "Inverse Projection Buffer"
+        );
+        this.inverseViewBuffer = this.createBuffer(
+            this.camera.inverseView as Float32Array,
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            undefined,
+            "Inverse View Buffer"
         );
         this.sphereBuffer = this.createBuffer(
             this.sphere,
@@ -130,22 +144,32 @@ export default class Renderer {
             entries: [
                 {
                     binding: 0,
-                    visibility: GPUShaderStage.VERTEX,
+                    visibility: GPUShaderStage.FRAGMENT,
                     buffer: {},
                 },
                 {
                     binding: 1,
-                    visibility: GPUShaderStage.VERTEX,
+                    visibility: GPUShaderStage.FRAGMENT,
                     buffer: {},
                 },
                 {
                     binding: 2,
-                    visibility: GPUShaderStage.VERTEX,
+                    visibility: GPUShaderStage.FRAGMENT,
                     buffer: {},
                 },
                 {
                     binding: 3,
-                    visibility: GPUShaderStage.VERTEX,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    buffer: {},
+                },
+                {
+                    binding: 4,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    buffer: {},
+                },
+                {
+                    binding: 5,
+                    visibility: GPUShaderStage.FRAGMENT,
                     buffer: {},
                 },
             ],
@@ -169,11 +193,23 @@ export default class Renderer {
                 {
                     binding: 2,
                     resource: {
-                        buffer: this.sphereBuffer,
+                        buffer: this.inverseProjectionBuffer,
                     },
                 },
                 {
                     binding: 3,
+                    resource: {
+                        buffer: this.inverseViewBuffer,
+                    },
+                },
+                {
+                    binding: 4,
+                    resource: {
+                        buffer: this.sphereBuffer,
+                    },
+                },
+                {
+                    binding: 5,
                     resource: {
                         buffer: this.lightDirBuffer,
                     },
@@ -337,10 +373,11 @@ export default class Renderer {
 
     perfTime = performance.now();
     render = () => {
-        let dx = Math.cos((Date.now() - this.startTime) / 300) * 2 - 1;
-        let dy = Math.sin((Date.now() - this.startTime) / 200) * 2 - 1;
-        let dz = Math.sin((Date.now() - this.startTime) / 400) / 5;
-        this.sphere = new Float32Array([1 + dx, 1 + dy, -0.1 + dz, 1.5]);
+        // let dx = Math.cos((Date.now() - this.startTime) / 300) * 2 - 1;
+        // let dy = Math.sin((Date.now() - this.startTime) / 200) * 2 - 1;
+        // let dz = Math.sin((Date.now() - this.startTime) / 400) / 5;
+        // this.sphere = new Float32Array([1 + dx, 1 + dy, -0.1 + dz, 1.5]);
+        this.sphere = new Float32Array([0, 0, 0, 1.5]);
         this.setUniforms();
         this.colorTexture = this.context.getCurrentTexture();
         this.colorTextureView = this.colorTexture.createView();

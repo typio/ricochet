@@ -11,7 +11,14 @@
 </head>
 
 <body>
-    <div id="app"></div>
+    <div id="app">
+        <div class="overlay">
+            <p>Hold right click to move (w/ keyboard) / rotate (w/ mouse).</p>
+            <p>
+                Thomas Huber • <a href="https://github.com/typio/ricochet">GitHub</a>
+            </p>
+        </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
 </body>
 
@@ -20,6 +27,15 @@
     body {
         margin: 0;
         overflow: hidden;
+    }
+
+    .overlay {
+        position: absolute;
+        text-align: right;
+        z-index: 10;
+        bottom: 0;
+        right: 0;
+        margin: 0 20px 0px 0;
     }
 </style>
 

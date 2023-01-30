@@ -2,11 +2,13 @@ lockfileVersion: 5.4
 
 specifiers:
   '@webgpu/types': ^0.1.25
+  gl-matrix: ^3.4.3
   typescript: ^4.9.3
   vite: ^4.0.0
 
 devDependencies:
   '@webgpu/types': 0.1.25
+  gl-matrix: 3.4.3
   typescript: 4.9.4
   vite: 4.0.4
 
@@ -256,6 +258,10 @@ packages:
 
   /function-bind/1.1.1:
     resolution: {integrity: sha512-yIovAzMX49sF8Yl58fSCWJ5svSLuaibPxXQJFLmBObTuCr0Mf1KiPopGM9NiFjiYBCbfaa2Fh6breQ6ANVTI0A==}
+    dev: true
+
+  /gl-matrix/3.4.3:
+    resolution: {integrity: sha512-wcCp8vu8FT22BnvKVPjXa/ICBWRq/zjFfdofZy1WSpQZpphblv12/bOQLBC1rMM7SGOFS9ltVmKOHil5+Ml7gA==}
     dev: true
 
   /has/1.0.3:

@@ -1,60 +1,49 @@
 struct Sphere {
-    pos: vec3<f32>,
+    pos: vec3f,
     r: f32,
 }
 
-@group(0) @binding(0) var<uniform> screenResolution: vec2<f32>;
-@group(0) @binding(1) var<uniform> rayOrigin: vec3<f32>;
-@group(0) @binding(2) var<uniform> sphere: Sphere;
-@group(0) @binding(3) var<uniform> lightDir: vec3<f32>;
+@group(0) @binding(0) var<uniform> screenResolution: vec2f;
+@group(0) @binding(1) var<uniform> rayOrigin: vec3f;
+@group(0) @binding(2) var<uniform> inverseProjection: mat4x4f;
+@group(0) @binding(3) var<uniform> inverseView: mat4x4f;
+@group(0) @binding(4) var<uniform> sphere: Sphere;
+@group(0) @binding(5) var<uniform> lightDir: vec3f;
 
 struct VertexOutput {
-    @builtin(position) pos: vec4<f32>,
-    @location(0) screenResolution: vec2<f32>,
-    @location(1) rayOrigin: vec3<f32>,
-    @location(2) spherePos: vec3<f32>,
-    @location(3) sphereR: f32,
-    @location(4) lightDir: vec3<f32>,
+    @builtin(position) pos: vec4f,
 };
 
 @vertex
 fn vs_main(
-        @location(0) inPos: vec3<f32>)
+        @location(0) inPos: vec3f)
          -> VertexOutput {
     var out: VertexOutput;
-    out.pos = vec4<f32>(inPos, 1.0);
-    out.screenResolution = screenResolution;
-    out.rayOrigin = rayOrigin;
-    out.spherePos = sphere.pos;
-    out.sphereR = sphere.r;
-    out.lightDir = lightDir;
+    out.pos = vec4f(inPos, 1.0);
     return out;
 }
 
 @fragment
-fn fs_main(@builtin(position) coords: vec4<f32>,
-        @location(0) screenResolution: vec2<f32>,
-        @location(1) rayOrigin: vec3<f32>,
-        @location(2) spherePos: vec3<f32>,
-        @location(3) sphereR: f32,
-        @location(4) lightDir: vec3<f32>,
-        ) -> @location(0) vec4<f32> {
+fn fs_main(@builtin(position) coords: vec4f,
+        ) -> @location(0) vec4f {
 
-    let uv = 2 * vec2<f32>(1., -1.) * ((coords.xy * vec2(screenResolution.x/screenResolution.y,1.)) / screenResolution) + vec2<f32>(-1.,1.);
+    let uv = 2 * vec2f(1., -1.) * ((coords.xy * vec2(screenResolution.x/screenResolution.y,1.)) / screenResolution) + vec2<f32>(-1.,1.);
 
+    let targ = inverseProjection * vec4(uv.x, uv.y,1,1);
     // return vec4(uv,0.,0.);
-    let rayDirection = vec3<f32>(uv.x,uv.y,-1);
+    let rayDirection = (inverseView * vec4(normalize(vec3(targ.xyz) / targ.w),0)).xyz;
+
     
     // let b = dot(rayOrigin, rayDirection);
-    // let c = dot(rayOrigin, rayOrigin) - sphereR * sphereR;
+    // let c = dot(rayOrigin, rayOrigin) - sphere.r * sphere.r;
     let a = dot(rayDirection, rayDirection);
     let b = 2 * (
-        rayDirection.x * (rayOrigin.x - spherePos.x) +
-        rayDirection.y * (rayOrigin.y - spherePos.y) +
-        rayDirection.z * (rayOrigin.z - spherePos.z));
+        rayDirection.x * (rayOrigin.x - sphere.pos.x) +
+        rayDirection.y * (rayOrigin.y - sphere.pos.y) +
+        rayDirection.z * (rayOrigin.z - sphere.pos.z));
     let c = dot(rayOrigin, rayOrigin) +
-        2 * (rayOrigin.x * spherePos.x + rayOrigin.y * spherePos.y + rayOrigin.z * spherePos.z) +
-        dot(spherePos, spherePos) - sphereR * sphereR;
+        2 * (rayOrigin.x * sphere.pos.x + rayOrigin.y * sphere.pos.y + rayOrigin.z * sphere.pos.z) +
+        dot(sphere.pos, sphere.pos) - sphere.r * sphere.r;
 
 
     var descriminant = b*b - 4 * a * c;
@@ -69,8 +58,8 @@ fn fs_main(@builtin(position) coords: vec4<f32>,
     let hit0 = rayOrigin + rayDirection * t0;
     let hit1 = rayOrigin + rayDirection * t1;
 
-    let normal = normalize(hit1 - spherePos);
+    let normal = normalize(hit1 - sphere.pos);
 
-    let d = max(dot(normal, -lightDir), 0.);
+    let d = max(dot(normal, -normalize(lightDir)), 0.);
     return vec4(d * vec3(1., .95, 0.), 1.); // draw circle
 }
