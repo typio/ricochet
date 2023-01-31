@@ -41,7 +41,7 @@ export default class Camera {
 
         this.forwardDirection = glm.vec3.fromValues(0, 0, -1);
         this.upDirection = glm.vec3.fromValues(0, 1, 0);
-        this.position = glm.vec3.fromValues(0, 0, 10);
+        this.position = glm.vec3.fromValues(0, 0, 25);
 
         this.recalculateProjection();
         this.recalculateView();

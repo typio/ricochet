@@ -19,17 +19,17 @@ export default class Scene {
             { position: [0, 0, -10], radius: 2, albedo: [1, 1, 1] },
         ];
 
-        for (let i = 0; i < 14; i++) {
-            for (let j = 0; j < 14; j++) {
+        for (let i = 0; i < 3; i++) {
+            for (let j = 0; j < 3; j++) {
                 this.spheres.push({
-                    position: [-6.25 * 5 + i * 5, -6.25 * 5 + j * 5, -50],
+                    position: [-1 * 5 + i * 5, -1 * 5 + j * 5, -50],
                     radius: 3.5,
-                    albedo: [1 / ((i + j - 14) / 14), 1 / (j / 7), 1 / (i / 7)],
+                    albedo: [1 / ((i + j - 3) / 3), 1 / (j / 1.5), 1 / (i / 1.5)],
                 });
             }
         }
 
-        this.lightDir = [0, -1, -1];
+        this.lightDir = [1, -1, -1];
 
         this.lightDirBuffer = new Float32Array(this.lightDir);
 
@@ -44,9 +44,9 @@ export default class Scene {
         let dz = Math.sin((Date.now() - this.startTime) / 100) * 10 + 15;
         this.spheres[3].position = [dx, dy, -5 - dz];
 
-        for (let i = 0; i < 14; i++) {
-            for (let j = 0; j < 14; j++) {
-                let idx = 4 + i * 14 + j;
+        for (let i = 0; i < 3; i++) {
+            for (let j = 0; j < 3; j++) {
+                let idx = 4 + i * 3 + j;
                 if ((i + j) % 2 === 0)
                     this.spheres[idx].position[2] =
                         -50 + Math.sin((Date.now() - this.startTime) / 125) * 4;

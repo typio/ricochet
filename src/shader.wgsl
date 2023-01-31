@@ -1,4 +1,4 @@
-const SPHERE_COUNT = 200;
+const SPHERE_COUNT = 13;
 
 struct Sphere {
     pos: vec3<f32>,
@@ -53,19 +53,19 @@ fn  fs_main(@builtin(position) coords: vec4<f32>,
             continue;
         }
 
-        hitSomething = true;
 
-        // let t0 = (-b + sqrt(descriminant))/(2.*a);
+        let t0 = (-b + sqrt(descriminant))/(2.*a);
         let t1 = (-b - sqrt(descriminant))/(2.*a);
 
-        if (t1 < hitDistance) {
+        if (t1 < hitDistance && t1 >=0) {
+            hitSomething = true;
             hitDistance = t1;
-            // let hit0 = rayOrigin + rayDirection * t0;
+            let hit0 = rayOrigin + rayDirection * t0;
             let hit1 = rayOrigin + rayDirection * t1;
             let normal = normalize(hit1 - sphere.pos);
             let d = max(dot(normal, -normalize(lightDir)), 0.);
-            pixel = vec4(d * sphere.albedo, 1.);
-        }
+            pixel = vec4(sphere.albedo * d, 1.);
+        } 
 
     }
     if (hitSomething) {
