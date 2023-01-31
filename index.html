@@ -12,11 +12,25 @@
 
 <body>
     <div id="app">
-        <div class="overlay">
-            <p>Hold right click to move (w/ keyboard) / rotate (w/ mouse).</p>
+        <div class="perfBox">
+            <p id="fps">test</p>
+            <p id="rendertime">testy</p>
+        </div>
+
+        <div class="infoBox" oncontextmenu="return false">
             <p>
-                Thomas Huber • <a href="https://github.com/typio/ricochet">GitHub</a>
+                Hold right click to move (w/ keyboard [W/A/S/D/Q/E]) / rotate (w/
+                mouse drag).
             </p>
+            <div style="
+            display: inline-flex;
+            justify-content: space-between;
+            width: 10rem;
+          ">
+                <a href="https://github.com/typio/ricochet">code</a>
+                <p>•</p>
+                <p>Thomas Huber</p>
+            </div>
         </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
@@ -29,13 +43,26 @@
         overflow: hidden;
     }
 
-    .overlay {
+    .infoBox,
+    .perfBox {
         position: absolute;
         text-align: right;
         z-index: 10;
-        bottom: 0;
-        right: 0;
-        margin: 0 20px 0px 0;
+        bottom: 10px;
+        right: 20px;
+    }
+
+    .perfBox {
+        top: 10px;
+    }
+
+    p,
+    a {
+        user-select: none;
+        color: #000;
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.5rem;
     }
 </style>
 

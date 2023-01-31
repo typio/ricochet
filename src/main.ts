@@ -1,13 +1,15 @@
 import Renderer from "./renderer";
 import Camera from "./camera";
+import Scene from "./scene";
 
 const canvas = document.createElement("canvas");
 canvas.oncontextmenu = () => false;
 const appElement = document.getElementById("app");
-appElement?.appendChild(canvas);
+appElement?.prepend(canvas);
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-const camera = new Camera(canvas, 45, 0.1, 100, 0.1);
-const renderer = new Renderer(canvas, camera); // Objects are passed by reference 🙌
+const scene = new Scene();
+const camera = new Camera(canvas, 45, 0.1, 100, 0.2);
+const renderer = new Renderer(canvas, scene, camera); // Objects are passed by reference 🙌
 renderer.start();

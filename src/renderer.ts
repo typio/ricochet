@@ -2,10 +2,12 @@
 import * as _webgpu_types from "@webgpu/types";
 
 import Camera from "./camera";
+import Scene from "./scene";
 import shaderWGSL from "./shader.wgsl?raw";
 
 export default class Renderer {
     canvas: HTMLCanvasElement;
+    scene: Scene;
     camera: Camera;
 
     adapter: GPUAdapter;
@@ -17,9 +19,6 @@ export default class Renderer {
     colorTextureView: GPUTextureView;
     depthTexture: GPUTexture;
     depthTextureView: GPUTextureView;
-
-    sphere: Float32Array;
-    lightDir: Float32Array;
 
     positionBuffer: GPUBuffer;
     rayOriginBuffer: GPUBuffer;
@@ -36,8 +35,9 @@ export default class Renderer {
     commandEncoder: GPUCommandEncoder;
     passEncoder: GPURenderPassEncoder;
 
-    constructor(canvas: HTMLCanvasElement, camera: Camera) {
+    constructor(canvas: HTMLCanvasElement, scene: Scene, camera: Camera) {
         this.canvas = canvas;
+        this.scene = scene;
         this.camera = camera;
     }
 
@@ -128,13 +128,13 @@ export default class Renderer {
             "Inverse View Buffer"
         );
         this.sphereBuffer = this.createBuffer(
-            this.sphere,
+            this.scene.spheresBuffer,
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
             "Sphere Position Buffer"
         );
         this.lightDirBuffer = this.createBuffer(
-            this.lightDir,
+            this.scene.lightDirBuffer,
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
             "Camera Position Buffer"
@@ -225,10 +225,6 @@ export default class Renderer {
             undefined,
             "Position Buffer"
         );
-
-        this.sphere = new Float32Array([0, 0, 0, 2]);
-
-        this.lightDir = new Float32Array([-1, -1, -1]);
 
         const shaderDesc = {
             code: shaderWGSL,
@@ -369,24 +365,45 @@ export default class Renderer {
 
         this.queue.submit([this.commandEncoder.finish()]);
     }
-    startTime = Date.now();
 
     perfTime = performance.now();
+    perfTimeLogs: number[] = [];
+    fpsElement = document.getElementById("fps");
+    rendertimeElement = document.getElementById("rendertime");
+
     render = () => {
-        // let dx = Math.cos((Date.now() - this.startTime) / 300) * 2 - 1;
-        // let dy = Math.sin((Date.now() - this.startTime) / 200) * 2 - 1;
-        // let dz = Math.sin((Date.now() - this.startTime) / 400) / 5;
-        // this.sphere = new Float32Array([1 + dx, 1 + dy, -0.1 + dz, 1.5]);
-        this.sphere = new Float32Array([0, 0, 0, 1.5]);
-        this.setUniforms();
         this.colorTexture = this.context.getCurrentTexture();
         this.colorTextureView = this.colorTexture.createView();
 
         this.encodeCommands();
 
+        // TODO: get clever and only update this stuff when it changes
+        this.camera.updatePos();
+        this.scene.updateSpheres();
+        this.scene.updateSpheresBuffer();
+        this.setUniforms();
+
         requestAnimationFrame(this.render);
-        let newPerfTime = performance.now();
-        // console.log(`${(1000 / (newPerfTime - this.perfTime)).toFixed(3)}fps`);
-        this.perfTime = newPerfTime;
+
+        if (this.fpsElement && this.rendertimeElement) {
+            let newPerfTime = performance.now();
+            this.perfTimeLogs.push(newPerfTime - this.perfTime);
+
+            //take average of array
+            let averagePerfTime =
+                this.perfTimeLogs.reduce((a, b) => a + b) / this.perfTimeLogs.length;
+
+            // update DOM text
+            this.fpsElement.innerText = `${(1000 / averagePerfTime).toFixed(0)}fps`;
+            this.rendertimeElement.innerText = `render time: ${averagePerfTime.toFixed(
+                1
+            )}ms`;
+
+            // discard old time values
+            if (this.perfTimeLogs.length > 20) this.perfTimeLogs.shift();
+
+            // store new time for next round
+            this.perfTime = newPerfTime;
+        }
     };
 }

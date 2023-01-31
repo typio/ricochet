@@ -15,6 +15,15 @@ export default class Camera {
 
     position: glm.vec3 = glm.vec3.create();
     forwardDirection: glm.vec3 = glm.vec3.create();
+    upDirection: glm.vec3 = glm.vec3.create();
+
+    move = false;
+    translateX = 0;
+    translateY = 0;
+    translateZ = 0;
+
+    rotate = false;
+    mouseMovement = [0, 0];
 
     constructor(
         canvas: HTMLCanvasElement,
@@ -31,19 +40,24 @@ export default class Camera {
         this.rotationSpeed = 3;
 
         this.forwardDirection = glm.vec3.fromValues(0, 0, -1);
-        this.position = glm.vec3.fromValues(0, 0, 3);
+        this.upDirection = glm.vec3.fromValues(0, 1, 0);
+        this.position = glm.vec3.fromValues(0, 0, 10);
 
         this.recalculateProjection();
         this.recalculateView();
-
-        const upDirection = glm.vec3.fromValues(0, 1, 0);
 
         document.addEventListener("mousedown", async (e) => {
             // right click
             if (e.button === 2) {
                 if (!document.pointerLockElement) {
-                    // @ts-ignore, function DOES take param according to mdn
-                    await canvas.requestPointerLock({ unadjustedMovement: true });
+                    try {
+                        // @ts-ignore, function DOES take param according to mdn
+                        await canvas.requestPointerLock({ unadjustedMovement: true });
+                    } catch {
+                        alert(
+                            "Please left click the view before trying to move with right click."
+                        );
+                    }
                 }
             }
         });
@@ -54,69 +68,82 @@ export default class Camera {
 
         document.addEventListener("pointerlockchange", () => {
             if (document.pointerLockElement === canvas) {
-                document.addEventListener("mousemove", rotateCamera);
-                document.addEventListener("keydown", translateCamera);
+                this.move = true;
+                document.addEventListener("mousemove", getMouseMovement);
+                document.addEventListener("keydown", getKeyDown);
+                document.addEventListener("keyup", getKeyUp);
             } else {
-                document.removeEventListener("mousemove", rotateCamera);
-                document.removeEventListener("keydown", translateCamera);
+                this.move = false;
+                document.removeEventListener("mousemove", getMouseMovement);
+                document.removeEventListener("keydown", getKeyDown);
+                // we don't remove up so we can see a keyup after pointer unlock
             }
         });
 
-        const translateCamera = (e: KeyboardEvent) => {
-            let rightDirection = glm.vec3.create();
-            glm.vec3.cross(rightDirection, this.forwardDirection, upDirection);
-            if (e.code === "KeyW")
-                glm.vec3.scaleAndAdd(
-                    this.position,
-                    this.position,
-                    this.forwardDirection,
-                    this.translationSpeed // * ts
-                );
-            else if (e.code === "KeyS")
-                glm.vec3.scaleAndAdd(
-                    this.position,
-                    this.position,
-                    this.forwardDirection,
-                    -1 * this.translationSpeed // * ts
-                );
+        const getKeyDown = (e: KeyboardEvent) => {
+            if (e.code === "KeyW") this.translateZ = 1;
+            else if (e.code === "KeyS") this.translateZ = -1;
 
-            if (e.code === "KeyD")
-                glm.vec3.scaleAndAdd(
-                    this.position,
-                    this.position,
-                    rightDirection,
-                    this.translationSpeed // * ts
-                );
-            else if (e.code === "KeyA")
-                glm.vec3.scaleAndAdd(
-                    this.position,
-                    this.position,
-                    rightDirection,
-                    -1 * this.translationSpeed // * ts
-                );
+            if (e.code === "KeyD") this.translateX = 1;
+            else if (e.code === "KeyA") this.translateX = -1;
 
-            if (e.code === "KeyE")
-                glm.vec3.scaleAndAdd(
-                    this.position,
-                    this.position,
-                    upDirection,
-                    this.translationSpeed // * ts
-                );
-            else if (e.code === "KeyQ")
-                glm.vec3.scaleAndAdd(
-                    this.position,
-                    this.position,
-                    upDirection,
-                    -1 * this.translationSpeed // * ts
-                );
-            this.recalculateProjection();
-            this.recalculateView();
+            if (e.code === "KeyE") this.translateY = 1;
+            else if (e.code === "KeyQ") this.translateY = -1;
         };
 
-        const rotateCamera = (e: MouseEvent) => {
+        const getKeyUp = (e: KeyboardEvent) => {
+            if (e.code === "KeyW") this.translateZ = 0;
+            else if (e.code === "KeyS") this.translateZ = 0;
+
+            if (e.code === "KeyD") this.translateX = 0;
+            else if (e.code === "KeyA") this.translateX = 0;
+
+            if (e.code === "KeyE") this.translateY = 0;
+            else if (e.code === "KeyQ") this.translateY = 0;
+        };
+
+        const getMouseMovement = (e: MouseEvent) => {
+            this.mouseMovement[0] += e.movementX;
+            this.mouseMovement[1] += e.movementY;
+        };
+    }
+
+    updatePos = () => {
+        if (this.move) {
+            // translate
             let rightDirection = glm.vec3.create();
-            glm.vec3.cross(rightDirection, this.forwardDirection, upDirection);
-            let delta = glm.vec2.fromValues(e.movementX, e.movementY);
+            glm.vec3.cross(rightDirection, this.forwardDirection, this.upDirection);
+            if (this.translateX !== 0)
+                glm.vec3.scaleAndAdd(
+                    this.position,
+                    this.position,
+                    rightDirection,
+                    this.translationSpeed * this.translateX // * ts
+                );
+            if (this.translateY !== 0)
+                glm.vec3.scaleAndAdd(
+                    this.position,
+                    this.position,
+                    this.upDirection,
+                    this.translationSpeed * this.translateY // * ts
+                );
+            if (this.translateZ !== 0)
+                glm.vec3.scaleAndAdd(
+                    this.position,
+                    this.position,
+                    this.forwardDirection,
+                    this.translationSpeed * this.translateZ // * ts
+                );
+
+            // rotate
+            glm.vec3.cross(rightDirection, this.forwardDirection, this.upDirection);
+
+            rightDirection = glm.vec3.create();
+            glm.vec3.cross(rightDirection, this.forwardDirection, this.upDirection);
+            let delta = glm.vec2.fromValues(
+                this.mouseMovement[0],
+                this.mouseMovement[1]
+            );
             glm.vec2.scale(delta, delta, 0.001);
 
             let pitchDelta = delta[1] * this.rotationSpeed;
@@ -126,7 +153,7 @@ export default class Camera {
             glm.quat.setAxisAngle(pitchQuat, rightDirection, -pitchDelta);
 
             let yawQuat = glm.quat.create();
-            glm.quat.setAxisAngle(yawQuat, upDirection, -yawDelta);
+            glm.quat.setAxisAngle(yawQuat, this.upDirection, -yawDelta);
 
             let q = glm.quat.create();
             glm.quat.mul(q, pitchQuat, yawQuat);
@@ -134,11 +161,10 @@ export default class Camera {
             glm.vec3.transformQuat(this.forwardDirection, this.forwardDirection, q);
             this.recalculateProjection();
             this.recalculateView();
-        };
-    }
 
-    // update = (ts: number) => { };
-    // resize = (width: number, height: number) => { };
+            this.mouseMovement = [0, 0];
+        }
+    };
 
     recalculateProjection = () => {
         glm.mat4.perspectiveZO(
