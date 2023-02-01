@@ -10,6 +10,6 @@ canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 const scene = new Scene();
-const camera = new Camera(canvas, 45, 0.1, 100, 0.2);
+const camera = new Camera(canvas, 45, 0.1, 100, 0.33);
 const renderer = new Renderer(canvas, scene, camera); // Objects are passed by reference 🙌
 renderer.start();
