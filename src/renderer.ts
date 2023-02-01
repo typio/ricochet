@@ -11,6 +11,7 @@ export default class Renderer {
     canvas: HTMLCanvasElement;
     scene: Scene;
     camera: Camera;
+    running: Boolean;
 
     adapter: GPUAdapter;
     device: GPUDevice;
@@ -34,7 +35,6 @@ export default class Renderer {
     computeBindGroup: GPUBindGroup;
     computeBindGroupLayout: GPUBindGroupLayout;
     computePipeline: GPUComputePipeline;
-    renderPassDesc: GPURenderPassDescriptor;
     renderBindGroup: GPUBindGroup;
     renderBindGroupLayout: GPUBindGroupLayout;
     renderPipeline: GPURenderPipeline;
@@ -48,7 +48,16 @@ export default class Renderer {
     }
 
     start = async () => {
+        this.running = true;
         if (await this.initializeAPI()) {
+            window.addEventListener("keydown", (e) => {
+                if (e.code === "KeyP") {
+                    this.running = !this.running
+                    if (this.running) {
+                        this.frame()
+                    }
+                }
+            })
             window.addEventListener("resize", () => {
                 this.canvas.width = window.innerWidth;
                 this.canvas.height = window.innerHeight;
@@ -283,7 +292,7 @@ export default class Renderer {
                 },
             ],
         });
-        
+
         this.computeBindGroup = this.device.createBindGroup({
             layout: this.computeBindGroupLayout,
             entries: [
@@ -334,12 +343,7 @@ export default class Renderer {
     };
 
     setRenderBindGroup = () => {
-        this.screenResolutionBuffer = this.createBuffer(
-            new Float32Array([this.canvas.width, this.canvas.height]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Screen Resolution Buffer"
-        );
+        this.screenResolutionBuffer = this.createBuffer(new Float32Array([this.canvas.width, this.canvas.height]), GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, undefined, "Screen Resolution Buffer");
 
         this.renderBindGroupLayout = this.device.createBindGroupLayout({
             entries: [
@@ -382,9 +386,7 @@ export default class Renderer {
         const passEncoder = this.commandEncoder.beginComputePass();
         passEncoder.setPipeline(this.computePipeline);
         passEncoder.setBindGroup(0, this.computeBindGroup);
-        passEncoder.dispatchWorkgroups(
-            Math.ceil((this.canvas.width * this.canvas.height) / 64)
-        );
+        passEncoder.dispatchWorkgroups(Math.ceil((this.canvas.width * this.canvas.height) / 64));
         passEncoder.end();
     };
 
@@ -409,6 +411,7 @@ export default class Renderer {
     fpsElement = document.getElementById("fps");
     rendertimeElement = document.getElementById("rendertime");
 
+
     frame = () => {
         this.colorTexture = this.context.getCurrentTexture();
         this.colorTextureView = this.colorTexture.createView();
@@ -417,8 +420,6 @@ export default class Renderer {
         this.renderPass();
 
         this.queue.submit([this.commandEncoder.finish()]);
-
-        requestAnimationFrame(this.frame);
 
         if (this.fpsElement && this.rendertimeElement) {
             let newPerfTime = performance.now();
@@ -435,10 +436,12 @@ export default class Renderer {
             )}ms`;
 
             // discard old time values
-            if (this.perfTimeLogs.length > 20) this.perfTimeLogs.shift();
+            if (this.perfTimeLogs.length > 25) this.perfTimeLogs.shift();
 
             // store new time for next round
             this.perfTime = newPerfTime;
         }
+
+        if (this.running) requestAnimationFrame(this.frame);
     };
 }
