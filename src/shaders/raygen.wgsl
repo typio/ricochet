@@ -1,6 +1,7 @@
+const SAMPLES = 1;
 const MATERIAL_COUNT = 5;
 const SPHERE_COUNT = 5;
-const BOUNCES = 6;
+const BOUNCES = 10;
 
 struct Camera {
     // position: vec3<f32>,
@@ -41,6 +42,7 @@ struct Ray {
 }
 
 struct RayPayload {
+    // color: vec3<f32>,
     objectIndex: u32,
 
     hitDistance: f32,
@@ -133,55 +135,52 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let coords = vec2<f32>(f32(global_id.x % u32(screenResolution.x)), f32(global_id.x / u32(screenResolution.x)));
     let rayDirection = calculate_ray_direction(coords);
 
-    var ray: Ray;
-    ray.origin = rayOrigin;
-    ray.direction = rayDirection;
-
     var color = vec3<f32>(0., 0., 0.);
-    var multiplier = 1.0;
 
-    for (var i = 0u; i < BOUNCES; i++) {
-        let rayPayload: RayPayload = trace_ray(ray);
-        if (rayPayload.hitDistance < 0.) {
-            // color += vec3(0.5, 0.75, 0.95) * multiplier; // draw background
-            color += vec3(0.,0.,0.) * multiplier; // draw background
-            // break;
+    for (var sample = 0u; sample < SAMPLES; sample++) {
+        var multiplier = 1.0;
+        var ray: Ray;
+        ray.direction = rayDirection;
+        ray.origin = rayOrigin;
+        for (var i = 0u; i < BOUNCES; i++) {
+        ray.origin += fract(sin(dot(
+                vec2(f32(global_id.x)/exp2(14), random_seed),
+                vec2(12.9898, 78.233)
+            )) * 43758.5453)/50;
+            let rayPayload: RayPayload = trace_ray(ray);
+            if (rayPayload.hitDistance < 0.) {
+                color += vec3(0.5, 0.75, 0.95) * multiplier; // draw background
+                //color += vec3(0.,0.,0.) * multiplier; // draw background
+                break;
+            }
+
+            let light_dir = normalize(lightDir);
+            let light_intensity: f32 = max(dot(rayPayload.worldNormal, -light_dir), 0.0f); // cos(angle)
+
+            let sphere = spheres[rayPayload.objectIndex];
+            var sphere_color = materials[u32(sphere.material_index)].albedo;
+            sphere_color *= light_intensity;
+            color += sphere_color * multiplier;
+
+            multiplier *= 0.5;
+
+            ray.origin = rayPayload.worldPosition + rayPayload.worldNormal * 0.0001;
+
+            let random = fract(sin(dot(
+                    vec2(f32(global_id.x)/exp2(14), random_seed),
+                    vec2(12.9898, 78.233)
+                )) * 43758.5453) - 0.5;
+
+            let random_offset_normal = rayPayload.worldNormal +
+            materials[u32(sphere.material_index)].r * random;
+            // reflect
+            ray.direction = ray.direction - 2.0 *
+                dot(random_offset_normal, ray.direction) *
+                random_offset_normal;
         }
-
-        let light_dir = normalize(lightDir);
-        let light_intensity: f32 = max(dot(rayPayload.worldNormal, -light_dir), 0.0f); // cos(angle)
-
-        let sphere = spheres[rayPayload.objectIndex];
-        var sphere_color = materials[u32(sphere.material_index)].albedo;
-        sphere_color *= light_intensity;
-        color += sphere_color * multiplier;
-
-        multiplier *= 0.5;
-
-        ray.origin = rayPayload.worldPosition + rayPayload.worldNormal * 0.0001;
-
-        let random = fract(sin(dot(
-                vec2(f32(global_id.x)/exp2(14), random_seed),
-                vec2(12.9898, 78.233)
-            )) * 43758.5453) - 0.5;
-
-        let random2 = fract(sin(dot(
-                vec2(f32(global_id.x)/exp2(14), random_seed),
-                vec2(12.9898, 78.233)
-            )) * 43758.5453) - 0.5;
-
-        let random3 = fract(sin(dot(
-                vec2(f32(global_id.x)/exp2(14), random_seed),
-                vec2(12.9898, 78.233)
-            )) * 43758.5453) - 0.5;
-
-        let random_offset_normal = rayPayload.worldNormal +
-        materials[u32(sphere.material_index)].r * vec3(random,random2,random3);
-        // reflect
-        ray.direction = ray.direction - 2.0 *
-            dot(random_offset_normal, ray.direction) *
-            random_offset_normal;
     }
+    color /= SAMPLES;
+    color = sqrt(color); // gamma correction ??? idk
 
     if (accumulations > 1) {
         accumulationColors[global_id.x] += color;

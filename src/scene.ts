@@ -23,8 +23,9 @@ export default class Scene {
         this.materials = [
             { albedo: [1, 0, 0], roughness: 0.0, metallic: 0.5 },
             { albedo: [0, 1, 0], roughness: 0.5, metallic: 0.5 },
-            { albedo: [0, 0, 1], roughness: 1.0, metallic: 0.5 },
-            { albedo: [1, 1, 1], roughness: 0.1, metallic: 0.5 },
+            { albedo: [0, 0, 1], roughness: 0.0, metallic: 0.5 },
+            { albedo: [1, 1, 1], roughness: 1.0, metallic: 0.5 },
+            { albedo: [0.3, 0.3, 0.3], roughness: 0.0, metallic: 0.5 },
         ];
 
         this.spheres = [
@@ -32,6 +33,7 @@ export default class Scene {
             { position: [0, -5, -5], radius: 2, materialIndex: 2 },
             { position: [5, 0, -5], radius: 2, materialIndex: 1 },
             { position: [0, 0, -10], radius: 2, materialIndex: 3 },
+            { position: [0, -1007, 0], radius: 1000, materialIndex: 4 },
         ];
 
         this.lightDir = [-1, -1, -1];
