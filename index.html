@@ -19,22 +19,24 @@
 
 <body>
     <div id="app">
-        <div class="perfBox">
+        <div class="perfBox" id="perf-box">
             <p id="fps">test</p>
             <p id="rendertime">testy</p>
         </div>
 
         <div class="infoBox" oncontextmenu="return false">
-            <p>
-                Hold right click to move (w/ keyboard [W/A/S/D/Q/E]) / rotate (w/
-                mouse drag).
-            </p>
-            <p>[p] to pause.</p>
-            <div style="
-            display: inline-flex;
-            justify-content: space-between;
-            width: 10rem;
-          ">
+            <div id="controls">
+                <p>
+                    Hold right click to move (w/ keyboard [W/A/S/D/Q/E]) / rotate (w/
+                    mouse drag).
+                </p>
+                <p>[p] to pause.</p>
+            </div>
+            <div style="display: inline-flex; justify-content: space-between">
+                <button id="show-fps-button">hide fps</button>
+                <p>•</p>
+                <button id="show-controls-button">show controls</button>
+                <p>•</p>
                 <a href="https://github.com/typio/ricochet">code</a>
                 <p>•</p>
                 <p>Thomas Huber</p>
@@ -43,6 +45,38 @@
     </div>
     <script type="module" src="/src/main.ts"></script>
 </body>
+
+<script>
+    let showControls = false;
+    let showFPS = true;
+
+    const fpsButton = document.getElementById("show-fps-button");
+    const controlsButton = document.getElementById("show-controls-button");
+    const perfBox = document.getElementById("perf-box");
+    const controls = document.getElementById("controls");
+
+    fpsButton.addEventListener("click", () => {
+        showFPS = !showFPS;
+        if (showFPS) {
+            fpsButton.innerText = "hide fps";
+            perfBox.style.display = "";
+        } else {
+            fpsButton.innerText = "show fps";
+            perfBox.style.display = "none";
+        }
+    });
+
+    controlsButton.addEventListener("click", () => {
+        showControls = !showControls;
+        if (showControls) {
+            controlsButton.innerText = "hide controls";
+            controls.style.display = "inline";
+        } else {
+            controlsButton.innerText = "show controls";
+            controls.style.display = "none";
+        }
+    });
+</script>
 
 <style>
     html,
@@ -62,16 +96,30 @@
         z-index: 10;
         bottom: 10px;
         right: 20px;
+        background: #001484;
+        border: 3px solid white;
+        box-shadow: 6px 6px gray;
+        padding: 2px 6px;
     }
 
     .perfBox {
         top: 10px;
+        height: fit-content;
+    }
+
+    #controls {
+        display: none;
     }
 
     p,
-    a {
+    a,
+    button {
+        padding: 0px 5px;
+        font-family: "Times New Roman", Times, serif;
+        background: none;
+        border: none;
         user-select: none;
-        color: #000;
+        color: #fff;
         margin: 0;
         font-size: 1rem;
         line-height: 1.5rem;
