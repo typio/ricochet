@@ -1,4 +1,5 @@
 import * as glm from "gl-matrix";
+glm.glMatrix.setMatrixArrayType(Array);
 
 export default class Camera {
     canvas: HTMLCanvasElement;
@@ -41,7 +42,7 @@ export default class Camera {
 
         this.forwardDirection = glm.vec3.fromValues(0, 0, -1);
         this.upDirection = glm.vec3.fromValues(0, 1, 0);
-        this.position = glm.vec3.fromValues(0, 0, 25);
+        this.position = glm.vec3.fromValues(0, 0, 5);
 
         this.recalculateProjection();
         this.recalculateView();

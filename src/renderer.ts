@@ -3,7 +3,6 @@ import * as _webgpu_types from "@webgpu/types";
 
 import Camera from "./camera";
 import Scene from "./scene";
-
 import renderWGSL from "./shaders/render.wgsl?raw";
 import raygenWGSL from "./shaders/raygen.wgsl?raw";
 
@@ -23,13 +22,18 @@ export default class Renderer {
     depthTexture: GPUTexture;
     depthTextureView: GPUTextureView;
 
+    accumulations: number;
+
+    accumulationsBuffer: GPUBuffer;
+    accumulationColorsBuffer: GPUBuffer;
     rayOriginBuffer: GPUBuffer;
-    inverseProjectionBuffer: GPUBuffer;
-    inverseViewBuffer: GPUBuffer;
+    cameraBuffer: GPUBuffer;
+    materialsBuffer: GPUBuffer;
     sphereBuffer: GPUBuffer;
     lightDirBuffer: GPUBuffer;
     screenResolutionBuffer: GPUBuffer;
     pixelColorsBuffer: GPUBuffer;
+    randomSeed: GPUBuffer;
     uniformBindGroup: GPUBindGroup;
     uniformBindGroupLayout: GPUBindGroupLayout;
     computeBindGroup: GPUBindGroup;
@@ -45,6 +49,8 @@ export default class Renderer {
         this.canvas = canvas;
         this.scene = scene;
         this.camera = camera;
+
+        this.accumulations = 0;
     }
 
     start = async () => {
@@ -52,12 +58,12 @@ export default class Renderer {
         if (await this.initializeAPI()) {
             window.addEventListener("keydown", (e) => {
                 if (e.code === "KeyP") {
-                    this.running = !this.running
+                    this.running = !this.running;
                     if (this.running) {
-                        this.frame()
+                        this.frame();
                     }
                 }
-            })
+            });
             window.addEventListener("resize", () => {
                 this.canvas.width = window.innerWidth;
                 this.canvas.height = window.innerHeight;
@@ -128,7 +134,16 @@ export default class Renderer {
             Float32Array.BYTES_PER_ELEMENT,
             "Pixel Colors Buffer"
         );
-        this.setComputeBindGroup()
+        this.accumulationColorsBuffer = this.createBuffer(
+            new Float32Array([]),
+            GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+            this.canvas.width *
+            this.canvas.height *
+            4 *
+            Float32Array.BYTES_PER_ELEMENT,
+            "Pixel Colors Buffer"
+        );
+        this.setComputeBindGroup();
 
         const raygenShaderModule = this.device.createShaderModule({
             code: raygenWGSL,
@@ -190,7 +205,6 @@ export default class Renderer {
         this.renderPipeline = await this.device.createRenderPipelineAsync(
             renderPipelineDesc
         );
-
     };
 
     resizeBackings = () => {
@@ -207,12 +221,6 @@ export default class Renderer {
             };
             this.context.configure(canvasConfig);
         }
-        this.screenResolutionBuffer = this.createBuffer(
-            new Float32Array([this.canvas.width, this.canvas.height]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            16,
-            "Screen Resolution Buffer"
-        );
     };
 
     setComputeBindGroup = () => {
@@ -223,31 +231,46 @@ export default class Renderer {
             "Screen Resolution Buffer"
         );
         this.rayOriginBuffer = this.createBuffer(
-            this.camera.position as Float32Array,
+            new Float32Array(this.camera.position),
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
             "Camera Position Buffer"
         );
-        this.inverseProjectionBuffer = this.createBuffer(
-            this.camera.inverseProjection as Float32Array,
+        this.cameraBuffer = this.createBuffer(
+            new Float32Array(
+                // @ts-ignore
+                this.camera.inverseProjection.concat(this.camera.inverseView)
+            ),
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
-            "Inverse Projection Buffer"
+            "Camera Buffer"
         );
-        this.inverseViewBuffer = this.createBuffer(
-            this.camera.inverseView as Float32Array,
+        this.materialsBuffer = this.createBuffer(
+            new Float32Array(this.scene.materialsBuffer),
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
-            "Inverse View Buffer"
+            "Material Position Buffer"
         );
         this.sphereBuffer = this.createBuffer(
-            this.scene.spheresBuffer,
+            new Float32Array(this.scene.spheresBuffer),
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
             "Sphere Position Buffer"
         );
         this.lightDirBuffer = this.createBuffer(
-            this.scene.lightDirBuffer,
+            new Float32Array(this.scene.lightDirBuffer),
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            undefined,
+            "Camera Position Buffer"
+        );
+        this.randomSeed = this.createBuffer(
+            new Float32Array([Math.random()]),
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            undefined,
+            "Camera Position Buffer"
+        );
+        this.accumulationsBuffer = this.createBuffer(
+            new Float32Array([this.accumulations]),
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
             "Camera Position Buffer"
@@ -290,6 +313,21 @@ export default class Renderer {
                     visibility: GPUShaderStage.COMPUTE,
                     buffer: { type: "uniform" },
                 },
+                {
+                    binding: 7,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "uniform" },
+                },
+                {
+                    binding: 8,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "uniform" },
+                },
+                {
+                    binding: 9,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "storage" },
+                },
             ],
         });
 
@@ -317,13 +355,13 @@ export default class Renderer {
                 {
                     binding: 3,
                     resource: {
-                        buffer: this.inverseProjectionBuffer,
+                        buffer: this.cameraBuffer,
                     },
                 },
                 {
                     binding: 4,
                     resource: {
-                        buffer: this.inverseViewBuffer,
+                        buffer: this.materialsBuffer,
                     },
                 },
                 {
@@ -338,24 +376,53 @@ export default class Renderer {
                         buffer: this.lightDirBuffer,
                     },
                 },
+                {
+                    binding: 7,
+                    resource: {
+                        buffer: this.randomSeed,
+                    },
+                },
+                {
+                    binding: 8,
+                    resource: {
+                        buffer: this.accumulationsBuffer,
+                    },
+                },
+                {
+                    binding: 9,
+                    resource: {
+                        buffer: this.accumulationColorsBuffer,
+                    },
+                },
             ],
         });
     };
 
     setRenderBindGroup = () => {
-        this.screenResolutionBuffer = this.createBuffer(new Float32Array([this.canvas.width, this.canvas.height]), GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, undefined, "Screen Resolution Buffer");
+        this.screenResolutionBuffer = this.createBuffer(
+            new Float32Array([this.canvas.width, this.canvas.height]),
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            undefined,
+            "Screen Resolution Buffer"
+        );
+        this.accumulationsBuffer = this.createBuffer(
+            new Float32Array([this.accumulations]),
+            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            undefined,
+            "Accumulations Buffer"
+        );
 
         this.renderBindGroupLayout = this.device.createBindGroupLayout({
             entries: [
                 {
                     binding: 0,
                     visibility: GPUShaderStage.FRAGMENT,
-                    buffer: { type: "uniform" },
+                    buffer: { type: "read-only-storage" },
                 },
                 {
                     binding: 1,
                     visibility: GPUShaderStage.FRAGMENT,
-                    buffer: { type: "read-only-storage" },
+                    buffer: { type: "uniform" },
                 },
             ],
         });
@@ -365,40 +432,41 @@ export default class Renderer {
             entries: [
                 {
                     binding: 0,
-                    resource: { buffer: this.screenResolutionBuffer },
+                    resource: { buffer: this.pixelColorsBuffer },
                 },
                 {
                     binding: 1,
-                    resource: { buffer: this.pixelColorsBuffer },
+                    resource: { buffer: this.screenResolutionBuffer },
                 },
             ],
         });
-    }
+    };
 
     computePass = () => {
         // TODO: get clever and only update this stuff when it changes
-        this.camera.updatePos();
-        this.scene.updateSpheres();
-        this.scene.updateSpheresBuffer();
 
         this.setComputeBindGroup();
         this.commandEncoder = this.device.createCommandEncoder();
         const passEncoder = this.commandEncoder.beginComputePass();
         passEncoder.setPipeline(this.computePipeline);
         passEncoder.setBindGroup(0, this.computeBindGroup);
-        passEncoder.dispatchWorkgroups(Math.ceil((this.canvas.width * this.canvas.height) / 64));
+        passEncoder.dispatchWorkgroups(
+            Math.ceil((this.canvas.width * this.canvas.height) / 64)
+        );
         passEncoder.end();
     };
 
     renderPass = () => {
         this.setRenderBindGroup();
         const passEncoder = this.commandEncoder.beginRenderPass({
-            colorAttachments: [{
-                view: this.colorTextureView,
-                clearValue: { r: 0, g: 0, b: 1, a: 1 },
-                loadOp: "clear",
-                storeOp: "store",
-            }]
+            colorAttachments: [
+                {
+                    view: this.colorTextureView,
+                    clearValue: { r: 0, g: 0, b: 1, a: 1 },
+                    loadOp: "clear",
+                    storeOp: "store",
+                },
+            ],
         });
         passEncoder.setPipeline(this.renderPipeline);
         passEncoder.setBindGroup(0, this.renderBindGroup);
@@ -411,11 +479,20 @@ export default class Renderer {
     fpsElement = document.getElementById("fps");
     rendertimeElement = document.getElementById("rendertime");
 
-
     frame = () => {
         this.colorTexture = this.context.getCurrentTexture();
         this.colorTextureView = this.colorTexture.createView();
 
+        this.camera.updatePos();
+        // this.scene.updateSpheres();
+        this.scene.updateSpheresBuffer();
+
+        this.accumulations++;
+        if (this.camera.move) {
+            this.accumulations = 0;
+        }
+
+        // this.scene.updateSpheres();
         this.computePass();
         this.renderPass();
 

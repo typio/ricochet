@@ -1,5 +1,5 @@
-@group(0) @binding(0) var<uniform> screenResolution: vec2<f32>;
-@group(0) @binding(1) var<storage, read> pixelColors: array<vec3<f32>>;
+@group(0) @binding(0) var<storage, read> pixelColors: array<vec3<f32>>;
+@group(0) @binding(1) var<uniform> screenResolution: vec2<f32>;
 
 struct VertexOutput {
     @builtin(position) pos: vec4<f32>,
