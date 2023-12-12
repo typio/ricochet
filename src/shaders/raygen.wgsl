@@ -1,28 +1,33 @@
-const SAMPLES = 1;
-const MATERIAL_COUNT = 5;
-const SPHERE_COUNT = 5;
-const BOUNCES = 10;
+const SAMPLES = 2; // Isn't this redundant with frame accumulation?
+const MATERIAL_COUNT = 6;
+const SPHERE_COUNT = 6;
+const BOUNCES = 20;
+
+const gamma = 1 / 2.2;
 
 struct Camera {
-    // position: vec3<f32>,
-    // right: vec3<f32>    // u
-    // up: vec3<f32>,      // v
-    // forward: vec3<f32>, // w
+  // position: vec3<f32>,
+  // right: vec3<f32>    // u
+  // up: vec3<f32>,      // v
+  // forward: vec3<f32>, // w
 
-    inverse_projection: mat4x4<f32>,
-    inverse_view: mat4x4<f32>,
+  inverse_projection: mat4x4<f32>,
+  inverse_view: mat4x4<f32>,
 }
 
 struct Material {
-    albedo: vec3<f32>,
-    r: f32,
-    m: f32,
+  albedo: vec3<f32>, 
+  roughness: f32,            
+  metallic: f32,                // everything is metaliic
+  spacer: vec2<f32>,            // NOTE: Alignment of vec3<f32> is 16bytes so the 4 bytes following it aren't accessible
+  emission_color: vec3<f32>,
+  emission_intensity: f32,
 }
 
 struct Sphere {
-    pos: vec3<f32>,
-    r: f32,
-    material_index: f32,
+  pos: vec3<f32>,
+  r: f32,
+  material_index: f32,
 }
 
 @group(0) @binding(0) var<storage, read_write> pixelColors: array<vec3<f32>>;
@@ -37,158 +42,178 @@ struct Sphere {
 @group(0) @binding(9) var<storage, read_write> accumulationColors: array<vec3<f32>>;
 
 struct Ray {
-    origin: vec3<f32>,
-    direction: vec3<f32>
+  origin: vec3<f32>,
+  direction: vec3<f32>
 }
 
 struct RayPayload {
-    // color: vec3<f32>,
-    objectIndex: u32,
+  // color: vec3<f32>,
+  objectIndex: u32,
 
-    hitDistance: f32,
+  hitDistance: f32,
 
-    worldPosition: vec3<f32>,
-    worldNormal: vec3<f32>
+  worldPosition: vec3<f32>,
+  worldNormal: vec3<f32>
 }
 
 // try using <workgroup>? https://www.w3.org/TR/WGSL/#compute-shader-workgroups
 fn calculate_ray_direction(coordinate: vec2<f32>) -> vec3<f32> {
-    let current_pixel = coordinate;
-    let pixel_center = (current_pixel + vec2(.5, .5)) / screenResolution;
+  let current_pixel = coordinate;
+  let pixel_center = (current_pixel + vec2(.5, .5)) / screenResolution;
 
-    // stands for normalized device coordinate
-    let ndc: vec2<f32> = vec2(2., -2.) * pixel_center + vec2(-1., 1.);
-    let ray_target: vec4<f32> = camera.inverse_projection * vec4<f32>(ndc.x, ndc.y, 1., 1.);
-    let pixel_ray_direction: vec4<f32> = camera.inverse_view * vec4<f32>(
-        normalize(vec3<f32>(ray_target.xyz) / ray_target.w),
-        0.
-    );
+  // stands for normalized device coordinate
+  let ndc: vec2<f32> = vec2(2., -2.) * pixel_center + vec2(-1., 1.);
+  let ray_target: vec4<f32> = camera.inverse_projection * vec4<f32>(ndc.x, ndc.y, 1., 1.);
+  let pixel_ray_direction: vec4<f32> = camera.inverse_view * vec4<f32>(
+    normalize(vec3<f32>(ray_target.xyz) / ray_target.w),
+    0.
+  );
 
-    return pixel_ray_direction.xyz;
+  return pixel_ray_direction.xyz;
 }
 
 fn trace_ray(ray: Ray) -> RayPayload {
-    var rayPayload: RayPayload;
+  var rayPayload: RayPayload;
 
-    var hitSomething = false;
-    var hitDistance: f32 = 0x1.fffffep+127f;
-    var objectIndex: u32 = 0;
+  var hitSomething = false;
+  var hitDistance: f32 = 0x1.fffffep+127f; // max float
+  var objectIndex: u32 = 0;
 
-    for (var i = 0u; i < SPHERE_COUNT; i++) {
-        let sphere = spheres[i];
-        var origin = ray.origin - sphere.pos;
+  // for every object (sphere) check if our ray intersects it
+  for (var i = 0u; i < SPHERE_COUNT; i++) {
+    let sphere = spheres[i];
+    var origin = ray.origin - sphere.pos;
 
-        let a = dot(ray.direction, ray.direction);
-        let b = 2 * dot(origin, ray.direction);
-        let c = dot(origin, origin) - sphere.r * sphere.r;
+    let a = dot(ray.direction, ray.direction);
+    let b = 2 * dot(origin, ray.direction);
+    let c = dot(origin, origin) - sphere.r * sphere.r;
 
-        var descriminant = b * b - 4 * a * c;
+    var descriminant = b * b - 4 * a * c;
 
-        if descriminant < 0 {
-            continue;
-        }
-
-        // let t0 = (-b + sqrt(descriminant)) / (2. * a);
-        let t1 = (-b - sqrt(descriminant)) / (2. * a);
-
-        if t1 < hitDistance && t1 >= 0 {
-            hitSomething = true;
-            hitDistance = t1;
-            objectIndex = i;
-        }
+    // no solutions: miss
+    if descriminant < 0 {
+        continue;
     }
-    if hitSomething {
-        return chit(ray, hitDistance, objectIndex);
+
+    // we only need the near solution: side facing us
+    // let t0 = (-b + sqrt(descriminant)) / (2. * a);
+    let t1 = (-b - sqrt(descriminant)) / (2. * a);
+
+    if t1 < hitDistance && t1 >= 0 {
+      hitSomething = true;
+      hitDistance = t1;
+      objectIndex = i;
     }
-    return miss(ray);
+  }
+  if hitSomething {
+    return chit(ray, hitDistance, objectIndex);
+  }
+  return miss(ray);
 }
 
 fn chit(ray: Ray, hitDistance: f32, objectIndex: u32) -> RayPayload {
-    var rayPayload: RayPayload;
+  var rayPayload: RayPayload;
 	rayPayload.hitDistance = hitDistance;
 	rayPayload.objectIndex = objectIndex;
 
 	let closestSphere = spheres[objectIndex];
-
 	let origin: vec3<f32> = ray.origin - closestSphere.pos;
 	rayPayload.worldPosition = origin + ray.direction * hitDistance;
 	rayPayload.worldNormal = normalize(rayPayload.worldPosition);
-
 	rayPayload.worldPosition += closestSphere.pos;
 
-    return rayPayload;
+  return rayPayload;
 }
 
 fn miss(ray: Ray) -> RayPayload {
-    var rayPayload: RayPayload;
-    rayPayload.hitDistance = -1.;
-    return rayPayload;
+  var rayPayload: RayPayload;
+  rayPayload.hitDistance = -1.;
+  return rayPayload;
+}
+
+// classic noise hash function
+fn rand(x: u32, seed: f32) -> f32 {
+  return fract(sin(dot(
+    vec2(f32(x) / exp2(14), seed),
+    vec2(12.9898, 78.233)
+  )) * 43758.5453);
 }
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    if global_id.x > u32(screenResolution.x * screenResolution.y) {
-        pixelColors[global_id.x] = vec3(0, 0, 1);
-        return;
-    }
-
-    let coords = vec2<f32>(f32(global_id.x % u32(screenResolution.x)), f32(global_id.x / u32(screenResolution.x)));
-    let rayDirection = calculate_ray_direction(coords);
-
-    var color = vec3<f32>(0., 0., 0.);
-
-    for (var sample = 0u; sample < SAMPLES; sample++) {
-        var multiplier = 1.0;
-        var ray: Ray;
-        ray.direction = rayDirection;
-        ray.origin = rayOrigin;
-        for (var i = 0u; i < BOUNCES; i++) {
-        ray.origin += fract(sin(dot(
-                vec2(f32(global_id.x)/exp2(14), random_seed),
-                vec2(12.9898, 78.233)
-            )) * 43758.5453)/50;
-            let rayPayload: RayPayload = trace_ray(ray);
-            if (rayPayload.hitDistance < 0.) {
-                color += vec3(0.5, 0.75, 0.95) * multiplier; // draw background
-                //color += vec3(0.,0.,0.) * multiplier; // draw background
-                break;
-            }
-
-            let light_dir = normalize(lightDir);
-            let light_intensity: f32 = max(dot(rayPayload.worldNormal, -light_dir), 0.0f); // cos(angle)
-
-            let sphere = spheres[rayPayload.objectIndex];
-            var sphere_color = materials[u32(sphere.material_index)].albedo;
-            sphere_color *= light_intensity;
-            color += sphere_color * multiplier;
-
-            multiplier *= 0.5;
-
-            ray.origin = rayPayload.worldPosition + rayPayload.worldNormal * 0.0001;
-
-            let random = fract(sin(dot(
-                    vec2(f32(global_id.x)/exp2(14), random_seed),
-                    vec2(12.9898, 78.233)
-                )) * 43758.5453) - 0.5;
-
-            let random_offset_normal = rayPayload.worldNormal +
-            materials[u32(sphere.material_index)].r * random;
-            // reflect
-            ray.direction = ray.direction - 2.0 *
-                dot(random_offset_normal, ray.direction) *
-                random_offset_normal;
-        }
-    }
-    color /= SAMPLES;
-    color = sqrt(color); // gamma correction ??? idk
-
-    if (accumulations > 1) {
-        accumulationColors[global_id.x] += color;
-        pixelColors[global_id.x] = accumulationColors[global_id.x] / accumulations;
-    } else {
-        accumulationColors[global_id.x] = color;
-        pixelColors[global_id.x] = color;
-    }
-
+  if global_id.x > u32(screenResolution.x * screenResolution.y) {
+    pixelColors[global_id.x] = vec3(0, 0, 1);
     return;
+  }
+
+  let coords = vec2<f32>(f32(global_id.x % u32(screenResolution.x)), f32(global_id.x / u32(screenResolution.x)));
+  let rayDirection = calculate_ray_direction(coords);
+
+  var light = vec3<f32>(0., 0., 0.);
+  var contribution = vec3<f32>(1., 1.0, 1.0);
+
+  for (var sample = 0u; sample < SAMPLES; sample++) {
+    var ray: Ray;
+    ray.direction = rayDirection;
+    ray.origin = rayOrigin;
+    for (var i = 0u; i < BOUNCES; i++) {
+
+      // offsets ray start position across samples for anti-alias effect
+      // constant factor seems bad, but no other option? 
+      ray.origin += rand(global_id.x + i, random_seed) * 0.03; 
+
+      let rayPayload: RayPayload = trace_ray(ray);
+      if (rayPayload.hitDistance == -1.) { // it didn't hit anything
+          // light += vec3(0.53, 0.8, 0.92) * contribution; // hit a background
+          break;
+      }
+
+
+      let sphere = spheres[rayPayload.objectIndex];
+      let material = materials[u32(sphere.material_index)];
+
+      // this isn't correct, for one - albedo changes emitted light color
+      light = contribution * material.albedo;
+      contribution *= material.albedo;
+      light += material.emission_color * material.emission_intensity;
+      if (i >= 1 || material.emission_intensity < 1) {
+        light *= contribution;
+      }
+
+      // move ray to hit for next, but a lil away so it doesnt collide with the inside
+      ray.origin = rayPayload.worldPosition + rayPayload.worldNormal * 0.0001;
+
+      var new_normal = rayPayload.worldNormal;
+
+      // add roughness
+      // new_normal += roughness * (rand(global_id.x, random_seed) - 0.5);
+
+      // v - 2*dot(v,n)*n;
+      // reflect
+      ray.direction = ray.direction - 2.0 * dot(ray.direction, rayPayload.worldNormal) * rayPayload.worldNormal;
+      let fuzz = (material.roughness * sphere.r * (rand(global_id.x + i , random_seed) - 0.5));
+      ray.direction = ray.direction + fuzz;
+
+      let random = (rand(global_id.x + i , random_seed) - 0.5);
+      let random2 = (rand(global_id.x * 2 + i, random_seed) - 0.5);
+      let random3 = (rand(global_id.x * 3 + i , random_seed) - 0.5);
+
+      ray.direction = normalize(normalize(vec3( random, random2, random3)) + rayPayload.worldNormal);
+      //ray.direction = ray.direction - 2.0 *
+      //  dot(new_normal, ray.direction) *
+      //  new_normal;
+    }
+  }
+   light /= SAMPLES;
+   light = pow(light, vec3(gamma, gamma, gamma));
+
+  if (accumulations > 1) {
+      accumulationColors[global_id.x] += light;
+      pixelColors[global_id.x] = accumulationColors[global_id.x] / accumulations;
+  } else {
+      accumulationColors[global_id.x] = light;
+      pixelColors[global_id.x] = light;
+  }
+
+  return;
 }

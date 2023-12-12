@@ -1,53 +1,43 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
+  <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/comet.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ricochet • Ray Tracer</title>
+  </head>
 
-    <!-- Chrome WebGPU Origin Trial -->
-    <!-- https://ray-ricochet.vercel.app -->
-    <meta http-equiv="origin-trial"
-        content="AqaTJ00KKYpXAwp9Gdb1I+twZlCbX16bjU1U50JxuB3j5w/PHpCLBQHsp30AfR9KQq/Ihsg4baeURsxylWNlLQQAAABXeyJvcmlnaW4iOiJodHRwczovL3JheS1yaWNvY2hldC52ZXJjZWwuYXBwOjQ0MyIsImZlYXR1cmUiOiJXZWJHUFUiLCJleHBpcnkiOjE2OTE3MTE5OTl9" />
-    <!-- http://localhost:3333-->
-    <meta http-equiv="origin-trial"
-        content="And6Cwoc6yTKTe7ekhKPlNqdZjQPeWGEXERDt9wYjTOinU9nayDR/OnUNQL02pphmpfkkccB3U3oHa/eOD9X4wcAAABJeyJvcmlnaW4iOiJodHRwOi8vbG9jYWxob3N0OjMzMzMiLCJmZWF0dXJlIjoiV2ViR1BVIiwiZXhwaXJ5IjoxNjkxNzExOTk5fQ==" />
-
-    <title>ricochet</title>
-</head>
-
-<body>
+  <body>
     <div id="app">
-        <div class="perfBox" id="perf-box">
-            <p id="fps">test</p>
-            <p id="rendertime">testy</p>
-        </div>
+      <div class="perfBox" id="perf-box">
+        <p id="fps">test</p>
+        <p id="rendertime">testy</p>
+      </div>
 
-        <div class="infoBox" oncontextmenu="return false">
-            <div id="controls">
-                <p>
-                    Hold right click to move (w/ keyboard [W/A/S/D/Q/E]) / rotate (w/
-                    mouse drag).
-                </p>
-                <p>[p] to pause.</p>
-            </div>
-            <div style="display: inline-flex; justify-content: space-between">
-                <button id="show-fps-button">hide fps</button>
-                <p>•</p>
-                <button id="show-controls-button">show controls</button>
-                <p>•</p>
-                <a href="https://github.com/typio/ricochet">code</a>
-                <p>•</p>
-                <p>Thomas Huber</p>
-            </div>
+      <div class="infoBox" oncontextmenu="return false">
+        <div id="controls">
+          <p>
+            Hold right click to move camera: (translate with [W/A/S/D/Q/E])
+            (rotate with mouse).
+          </p>
+          <p>[p] to pause.</p>
         </div>
+        <div style="display: inline-flex; justify-content: space-between">
+          <button id="show-fps-button">hide fps</button>
+          <p>•</p>
+          <button id="show-controls-button">hide controls</button>
+          <p>•</p>
+          <a target="_blank" href="https://github.com/typio/ricochet">code</a>
+          <p>•</p>
+          <a target="_blank" href="https://tohuber.com">Thomas Huber</a>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
-</body>
+  </body>
 
-<script>
-    let showControls = false;
+  <script>
+    let showControls = true;
     let showFPS = true;
 
     const fpsButton = document.getElementById("show-fps-button");
@@ -56,74 +46,79 @@
     const controls = document.getElementById("controls");
 
     fpsButton.addEventListener("click", () => {
-        showFPS = !showFPS;
-        if (showFPS) {
-            fpsButton.innerText = "hide fps";
-            perfBox.style.display = "";
-        } else {
-            fpsButton.innerText = "show fps";
-            perfBox.style.display = "none";
-        }
+      showFPS = !showFPS;
+      if (showFPS) {
+        fpsButton.innerText = "hide fps";
+        perfBox.style.display = "";
+      } else {
+        fpsButton.innerText = "show fps";
+        perfBox.style.display = "none";
+      }
     });
 
     controlsButton.addEventListener("click", () => {
-        showControls = !showControls;
-        if (showControls) {
-            controlsButton.innerText = "hide controls";
-            controls.style.display = "inline";
-        } else {
-            controlsButton.innerText = "show controls";
-            controls.style.display = "none";
-        }
+      showControls = !showControls;
+      if (showControls) {
+        controlsButton.innerText = "hide controls";
+        controls.style.display = "inline";
+      } else {
+        controlsButton.innerText = "show controls";
+        controls.style.display = "none";
+      }
     });
-</script>
+  </script>
 
-<style>
+  <style>
     html,
     body {
-        margin: 0;
-        overflow: hidden;
+      margin: 0;
+      overflow: hidden;
     }
 
     canvas {
-        position: absolute;
+      position: absolute;
     }
 
     .infoBox,
     .perfBox {
-        position: absolute;
-        text-align: right;
-        z-index: 10;
-        bottom: 10px;
-        right: 20px;
-        background: #001484;
-        border: 3px solid white;
-        box-shadow: 6px 6px gray;
-        padding: 2px 6px;
+      position: absolute;
+      text-align: right;
+      z-index: 10;
+      bottom: 6px;
+      right: 6px;
+      background: #001484;
+      border: 3px solid white;
+      padding: 2px 6px;
     }
 
     .perfBox {
-        top: 10px;
-        height: fit-content;
+      top: 6px;
+      height: fit-content;
     }
 
     #controls {
-        display: none;
     }
 
     p,
     a,
     button {
-        padding: 0px 5px;
-        font-family: "Times New Roman", Times, serif;
-        background: none;
-        border: none;
-        user-select: none;
-        color: #fff;
-        margin: 0;
-        font-size: 1rem;
-        line-height: 1.5rem;
+      padding: 0px 5px;
+      font-family:
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        "Open Sans",
+        "Helvetica Neue",
+        sans-serif;
+      background: none;
+      border: none;
+      user-select: none;
+      color: #fff;
+      margin: 0;
+      font-size: 0.9rem;
+      line-height: 1.5rem;
     }
-</style>
-
+  </style>
 </html>

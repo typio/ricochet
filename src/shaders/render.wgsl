@@ -12,6 +12,7 @@ fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VertexOutput {
             vec2<f32>( 1.0,  1.0),
             vec2<f32>( 1.0, -1.0),
             vec2<f32>(-1.0, -1.0),
+
             vec2<f32>( 1.0,  1.0),
             vec2<f32>(-1.0, -1.0),
             vec2<f32>(-1.0,  1.0)

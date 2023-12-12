@@ -1,4 +1,3 @@
-// @ts-ignore
 import * as _webgpu_types from "@webgpu/types";
 
 import Camera from "./camera";
@@ -17,8 +16,10 @@ export default class Renderer {
     queue: GPUQueue;
 
     context: GPUCanvasContext;
+
     colorTexture: GPUTexture;
     colorTextureView: GPUTextureView;
+
     depthTexture: GPUTexture;
     depthTextureView: GPUTextureView;
 
@@ -34,11 +35,14 @@ export default class Renderer {
     screenResolutionBuffer: GPUBuffer;
     pixelColorsBuffer: GPUBuffer;
     randomSeed: GPUBuffer;
+
     uniformBindGroup: GPUBindGroup;
     uniformBindGroupLayout: GPUBindGroupLayout;
+
     computeBindGroup: GPUBindGroup;
     computeBindGroupLayout: GPUBindGroupLayout;
     computePipeline: GPUComputePipeline;
+
     renderBindGroup: GPUBindGroup;
     renderBindGroupLayout: GPUBindGroupLayout;
     renderPipeline: GPURenderPipeline;
@@ -238,7 +242,6 @@ export default class Renderer {
         );
         this.cameraBuffer = this.createBuffer(
             new Float32Array(
-                // @ts-ignore
                 this.camera.inverseProjection.concat(this.camera.inverseView)
             ),
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -249,7 +252,7 @@ export default class Renderer {
             new Float32Array(this.scene.materialsBuffer),
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             undefined,
-            "Material Position Buffer"
+            "Material Buffer"
         );
         this.sphereBuffer = this.createBuffer(
             new Float32Array(this.scene.spheresBuffer),
@@ -444,7 +447,6 @@ export default class Renderer {
 
     computePass = () => {
         // TODO: get clever and only update this stuff when it changes
-
         this.setComputeBindGroup();
         this.commandEncoder = this.device.createCommandEncoder();
         const passEncoder = this.commandEncoder.beginComputePass();
@@ -492,7 +494,6 @@ export default class Renderer {
             this.accumulations = 0;
         }
 
-        // this.scene.updateSpheres();
         this.computePass();
         this.renderPass();
 
@@ -502,7 +503,6 @@ export default class Renderer {
             let newPerfTime = performance.now();
             this.perfTimeLogs.push(newPerfTime - this.perfTime);
 
-            //take average of array
             let averagePerfTime =
                 this.perfTimeLogs.reduce((a, b) => a + b) / this.perfTimeLogs.length;
 
@@ -512,10 +512,7 @@ export default class Renderer {
                 1
             )}ms`;
 
-            // discard old time values
-            if (this.perfTimeLogs.length > 25) this.perfTimeLogs.shift();
-
-            // store new time for next round
+            while (this.perfTimeLogs.length > 25) this.perfTimeLogs.shift();
             this.perfTime = newPerfTime;
         }
 

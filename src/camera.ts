@@ -47,13 +47,12 @@ export default class Camera {
         this.recalculateProjection();
         this.recalculateView();
 
-        document.addEventListener("mousedown", async (e) => {
+        document.addEventListener("mousedown", (e) => {
             // right click
             if (e.button === 2) {
                 if (!document.pointerLockElement) {
                     try {
-                        // @ts-ignore, function DOES take param according to mdn
-                        await canvas.requestPointerLock({ unadjustedMovement: true });
+                        canvas.requestPointerLock({ unadjustedMovement: true });
                     } catch {
                         alert(
                             "Please left click the view before trying to move with right click."
