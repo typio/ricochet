@@ -1,3 +1,4 @@
+// @ts-ignore
 import * as _webgpu_types from "@webgpu/types";
 
 import Camera from "./camera";
@@ -242,6 +243,7 @@ export default class Renderer {
         );
         this.cameraBuffer = this.createBuffer(
             new Float32Array(
+                // @ts-ignore
                 this.camera.inverseProjection.concat(this.camera.inverseView)
             ),
             GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,

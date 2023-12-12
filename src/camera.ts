@@ -52,6 +52,7 @@ export default class Camera {
             if (e.button === 2) {
                 if (!document.pointerLockElement) {
                     try {
+                        // @ts-ignore
                         canvas.requestPointerLock({ unadjustedMovement: true });
                     } catch {
                         alert(
