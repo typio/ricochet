@@ -1,8 +1,7 @@
 const SAMPLES = 2; // Isn't this redundant with frame accumulation?
-const RAY_SPREAD = 0.3;
+
 const MATERIAL_COUNT = 100;
-const SPHERE_COUNT = 70;
-const BOUNCES = 10;
+const SPHERE_COUNT = 300;
 
 const gamma = 1 / 2.2;
 
@@ -18,10 +17,10 @@ struct Camera {
 
 struct Material {
   albedo: vec3<f32>, 
-  spacer: f32,
+  spacer: f32,                  // NOTE: Alignment of vec3<f32> is 16bytes so the 4 bytes following it aren't accessible
   roughness: f32,            
-  metallic: f32,                // everything is metaliic
-  spacer2: vec2<f32>,            // NOTE: Alignment of vec3<f32> is 16bytes so the 4 bytes following it aren't accessible
+  metallic: f32,                // everything is "metaliic" rn ig
+  spacer2: vec2<f32>,            
   emission_color: vec3<f32>,
   emission_intensity: f32,
 }
@@ -32,13 +31,20 @@ struct Sphere {
   material_index: f32,
 }
 
+struct SceneProps {
+  sunIntensity: f32,
+  spheres: f32,
+  rayOffset: f32,
+  rayBounces: f32,
+}
+
 @group(0) @binding(0) var<storage, read_write> pixelColors: array<vec3<f32>>;
 @group(0) @binding(1) var<uniform> screenResolution: vec2<f32>;
 @group(0) @binding(2) var<uniform> rayOrigin: vec3<f32>;
 @group(0) @binding(3) var<uniform> camera: Camera;
 @group(0) @binding(4) var<uniform> materials: array<Material, MATERIAL_COUNT>;
 @group(0) @binding(5) var<uniform> spheres: array<Sphere, SPHERE_COUNT>;
-@group(0) @binding(6) var<uniform> lightDir: vec3<f32>;
+@group(0) @binding(6) var<uniform> sceneProps: SceneProps;
 @group(0) @binding(7) var<uniform> random_seed: f32;
 @group(0) @binding(8) var<uniform> accumulations: f32;
 @group(0) @binding(9) var<storage, read_write> accumulationColors: array<vec3<f32>>;
@@ -82,7 +88,7 @@ fn trace_ray(ray: Ray) -> RayPayload {
   var objectIndex: u32 = 0;
 
   // for every object (sphere) check if our ray intersects it
-  for (var i = 0u; i < SPHERE_COUNT; i++) {
+  for (var i = 0u; i < u32(sceneProps.spheres); i++) {
     let sphere = spheres[i];
     var origin = ray.origin - sphere.pos;
 
@@ -148,6 +154,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     return;
   }
 
+
   let coords = vec2<f32>(f32(global_id.x % u32(screenResolution.x)), f32(global_id.x / u32(screenResolution.x)));
   let rayDirection = calculate_ray_direction(coords);
 
@@ -158,11 +165,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var ray: Ray;
     ray.direction = rayDirection;
     ray.origin = rayOrigin;
-    for (var i = 0u; i < BOUNCES; i++) {
-
+    for (var i = 0u; i < u32(sceneProps.rayBounces); i++) {
       // offsets ray start position across samples for anti-alias effect
       // constant factor seems bad, but no other option? 
-      ray.origin += (rand(global_id.x * i, random_seed) - 0.5) * RAY_SPREAD;
+      ray.origin += (rand(global_id.x * i, random_seed) - 0.5) * sceneProps.rayOffset;
 
       let rayPayload: RayPayload = trace_ray(ray);
       if (rayPayload.hitDistance == -1.) { // it didn't hit anything

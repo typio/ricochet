@@ -1,525 +1,565 @@
 // @ts-ignore
-import * as _webgpu_types from "@webgpu/types";
+import * as _webgpu_types from '@webgpu/types'
 
-import Camera from "./camera";
-import Scene from "./scene";
-import renderWGSL from "./shaders/render.wgsl?raw";
-import raygenWGSL from "./shaders/raygen.wgsl?raw";
+import Camera from './camera'
+import Scene from './scene'
+import renderWGSL from './shaders/render.wgsl?raw'
+import raygenWGSL from './shaders/raygen.wgsl?raw'
 
 export default class Renderer {
-    canvas: HTMLCanvasElement;
-    scene: Scene;
-    camera: Camera;
-    running: Boolean;
+  canvas: HTMLCanvasElement
+  scene: Scene
+  camera: Camera
+  running: Boolean
 
-    adapter: GPUAdapter;
-    device: GPUDevice;
-    queue: GPUQueue;
+  adapter: GPUAdapter
+  device: GPUDevice
+  queue: GPUQueue
 
-    context: GPUCanvasContext;
+  context: GPUCanvasContext
 
-    colorTexture: GPUTexture;
-    colorTextureView: GPUTextureView;
+  colorTexture: GPUTexture
+  colorTextureView: GPUTextureView
 
-    depthTexture: GPUTexture;
-    depthTextureView: GPUTextureView;
+  depthTexture: GPUTexture
+  depthTextureView: GPUTextureView
 
-    accumulations: number;
+  accumulations: number
 
-    accumulationsBuffer: GPUBuffer;
-    accumulationColorsBuffer: GPUBuffer;
-    rayOriginBuffer: GPUBuffer;
-    cameraBuffer: GPUBuffer;
-    materialsBuffer: GPUBuffer;
-    sphereBuffer: GPUBuffer;
-    lightDirBuffer: GPUBuffer;
-    screenResolutionBuffer: GPUBuffer;
-    pixelColorsBuffer: GPUBuffer;
-    randomSeed: GPUBuffer;
+  accumulationsBuffer: GPUBuffer
+  accumulationColorsBuffer: GPUBuffer
+  rayOriginBuffer: GPUBuffer
+  cameraBuffer: GPUBuffer
+  materialsBuffer: GPUBuffer
+  sphereBuffer: GPUBuffer
+  scenePropsBuffer: GPUBuffer
+  screenResolutionBuffer: GPUBuffer
+  pixelColorsBuffer: GPUBuffer
+  randomSeedBuffer: GPUBuffer
 
-    uniformBindGroup: GPUBindGroup;
-    uniformBindGroupLayout: GPUBindGroupLayout;
+  uniformBindGroup: GPUBindGroup
+  uniformBindGroupLayout: GPUBindGroupLayout
 
-    computeBindGroup: GPUBindGroup;
-    computeBindGroupLayout: GPUBindGroupLayout;
-    computePipeline: GPUComputePipeline;
+  computeBindGroup: GPUBindGroup
+  computeBindGroupLayout: GPUBindGroupLayout
+  computePipeline: GPUComputePipeline
 
-    renderBindGroup: GPUBindGroup;
-    renderBindGroupLayout: GPUBindGroupLayout;
-    renderPipeline: GPURenderPipeline;
+  renderBindGroup: GPUBindGroup
+  renderBindGroupLayout: GPUBindGroupLayout
+  renderPipeline: GPURenderPipeline
 
-    commandEncoder: GPUCommandEncoder;
+  commandEncoder: GPUCommandEncoder
 
-    constructor(canvas: HTMLCanvasElement, scene: Scene, camera: Camera) {
-        this.canvas = canvas;
-        this.scene = scene;
-        this.camera = camera;
+  sceneProps: {
+    [key: string]: any
+  }
 
-        this.accumulations = 0;
+  constructor(canvas: HTMLCanvasElement, scene: Scene, camera: Camera) {
+    this.canvas = canvas
+    this.scene = scene
+    this.camera = camera
+
+    this.accumulations = 0
+
+    this.sceneProps = {
+      sunIntensity: 0,
+      spheres: 40,
+      rayOffset: 0,
+      rayBounces: 4,
+    }
+  }
+
+  start = async () => {
+    this.running = true
+    if (await this.initializeAPI()) {
+      Object.keys(this.sceneProps).forEach((inputId) => {
+        let inputElement = document.getElementById(inputId) as HTMLInputElement
+        let inputValueElement = document.getElementById(inputId + 'Value')
+        if (inputValueElement)
+          inputValueElement.innerText = this.sceneProps[inputId]
+        inputElement.value = this.sceneProps[inputId]
+        if (inputElement) {
+          inputElement.addEventListener('input', (e) => {
+            let target = e.target as HTMLInputElement
+            this.sceneProps[inputId] = Number(target?.value)
+
+            let inputValueElement = document.getElementById(inputId + 'Value')
+            if (inputValueElement)
+              inputValueElement.innerText = this.sceneProps[inputId]
+
+            // WARN: LOL BAD hack pls fix
+            if (inputId == 'sunIntensity') {
+              this.scene.materialsBuffer[11] = (Number(target.value) / 100) ** 2
+            }
+            this.accumulations = 0
+          })
+        }
+      })
+
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'KeyP') {
+          this.running = !this.running
+          if (this.running) {
+            this.frame()
+          }
+        }
+      })
+      window.addEventListener('resize', () => {
+        this.canvas.width = window.innerWidth
+        this.canvas.height = window.innerHeight
+        this.resizeBackings()
+      })
+      await this.initializeResources()
+      this.resizeBackings()
+      this.frame()
+    }
+  }
+
+  initializeAPI = async (): Promise<boolean> => {
+    try {
+      const entry: GPU = navigator.gpu
+      if (!entry) {
+        alert(
+          "Failed to connect to GPU, please try Chrome browser if you aren't using it already."
+        )
+        return false
+      }
+
+      this.adapter = ((adapter) => {
+        if (adapter === null) throw new Error('Failed to get adapter')
+        else return adapter
+      })(await entry.requestAdapter())
+
+      this.device = await this.adapter.requestDevice()
+
+      this.queue = this.device.queue
+    } catch (e) {
+      console.error(e)
+      return false
     }
 
-    start = async () => {
-        this.running = true;
-        if (await this.initializeAPI()) {
-            window.addEventListener("keydown", (e) => {
-                if (e.code === "KeyP") {
-                    this.running = !this.running;
-                    if (this.running) {
-                        this.frame();
-                    }
-                }
-            });
-            window.addEventListener("resize", () => {
-                this.canvas.width = window.innerWidth;
-                this.canvas.height = window.innerHeight;
-                this.resizeBackings();
-            });
-            await this.initializeResources();
-            this.resizeBackings();
-            this.frame();
-        }
-    };
+    return true
+  }
 
-    initializeAPI = async (): Promise<boolean> => {
-        try {
-            const entry: GPU = navigator.gpu;
-            if (!entry) {
-                alert(
-                    "Failed to connect to GPU, please try Chrome browser if you aren't using it already."
-                );
-                return false;
-            }
+  createBuffer = (
+    arr: Float32Array | Uint16Array,
+    usage: number,
+    size?: number,
+    label?: string
+  ) => {
+    let desc = {
+      label,
+      size: size ?? (arr.byteLength + 3) & ~3,
+      usage,
+      mappedAtCreation: true,
+    }
+    let buffer = this.device.createBuffer(desc)
+    const writeArray =
+      arr instanceof Uint16Array
+        ? new Uint16Array(buffer.getMappedRange())
+        : new Float32Array(buffer.getMappedRange())
+    writeArray.set(arr)
+    buffer.unmap()
+    return buffer
+  }
 
-            this.adapter = ((adapter) => {
-                if (adapter === null) throw new Error("Failed to get adapter");
-                else return adapter;
-            })(await entry.requestAdapter());
+  initializeResources = async () => {
+    // COMPUTE
+    this.pixelColorsBuffer = this.createBuffer(
+      new Float32Array([]),
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+      this.canvas.width *
+        this.canvas.height *
+        4 *
+        Float32Array.BYTES_PER_ELEMENT,
+      'Pixel Colors Buffer'
+    )
+    this.accumulationColorsBuffer = this.createBuffer(
+      new Float32Array([]),
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+      this.canvas.width *
+        this.canvas.height *
+        4 *
+        Float32Array.BYTES_PER_ELEMENT,
+      'Pixel Colors Buffer'
+    )
+    this.setComputeBindGroup()
 
-            this.device = await this.adapter.requestDevice();
+    const raygenShaderModule = this.device.createShaderModule({
+      code: raygenWGSL,
+    })
 
-            this.queue = this.device.queue;
-        } catch (e) {
-            console.error(e);
-            return false;
-        }
+    const computePipelineLayoutDesc = {
+      bindGroupLayouts: [this.computeBindGroupLayout],
+    }
+    const computeLayout = this.device.createPipelineLayout(
+      computePipelineLayoutDesc
+    )
+    this.computePipeline = await this.device.createComputePipelineAsync({
+      layout: computeLayout,
+      compute: { module: raygenShaderModule, entryPoint: 'main' },
+    })
 
-        return true;
-    };
+    //RENDER
+    const renderShaderModule = this.device.createShaderModule({
+      code: renderWGSL,
+    })
 
-    createBuffer = (
-        arr: Float32Array | Uint16Array,
-        usage: number,
-        size?: number,
-        label?: string
-    ) => {
-        let desc = {
-            label,
-            size: size ?? (arr.byteLength + 3) & ~3,
-            usage,
-            mappedAtCreation: true,
-        };
-        let buffer = this.device.createBuffer(desc);
-        const writeArray =
-            arr instanceof Uint16Array
-                ? new Uint16Array(buffer.getMappedRange())
-                : new Float32Array(buffer.getMappedRange());
-        writeArray.set(arr);
-        buffer.unmap();
-        return buffer;
-    };
+    this.setRenderBindGroup()
 
-    initializeResources = async () => {
-        // COMPUTE
-        this.pixelColorsBuffer = this.createBuffer(
-            new Float32Array([]),
-            GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-            this.canvas.width *
-            this.canvas.height *
-            4 *
-            Float32Array.BYTES_PER_ELEMENT,
-            "Pixel Colors Buffer"
-        );
-        this.accumulationColorsBuffer = this.createBuffer(
-            new Float32Array([]),
-            GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-            this.canvas.width *
-            this.canvas.height *
-            4 *
-            Float32Array.BYTES_PER_ELEMENT,
-            "Pixel Colors Buffer"
-        );
-        this.setComputeBindGroup();
+    const renderPipelineLayoutDesc = {
+      bindGroupLayouts: [this.renderBindGroupLayout],
+    }
+    const renderLayout = this.device.createPipelineLayout(
+      renderPipelineLayoutDesc
+    )
 
-        const raygenShaderModule = this.device.createShaderModule({
-            code: raygenWGSL,
-        });
+    const vertex: GPUVertexState = {
+      module: renderShaderModule,
+      entryPoint: 'vs_main',
+    }
 
-        const computePipelineLayoutDesc = {
-            bindGroupLayouts: [this.computeBindGroupLayout],
-        };
-        const computeLayout = this.device.createPipelineLayout(
-            computePipelineLayoutDesc
-        );
-        this.computePipeline = await this.device.createComputePipelineAsync({
-            layout: computeLayout,
-            compute: { module: raygenShaderModule, entryPoint: "main" },
-        });
+    const colorState: GPUColorTargetState = {
+      format: 'bgra8unorm',
+    }
 
-        //RENDER
-        const renderShaderModule = this.device.createShaderModule({
-            code: renderWGSL,
-        });
+    const fragment: GPUFragmentState = {
+      module: renderShaderModule,
+      entryPoint: 'fs_main',
+      targets: [colorState],
+    }
 
-        this.setRenderBindGroup();
+    const primitive: GPUPrimitiveState = {
+      frontFace: 'ccw',
+      cullMode: 'none',
+      topology: 'triangle-list',
+    }
+    const renderPipelineDesc: GPURenderPipelineDescriptor = {
+      layout: renderLayout,
 
-        const renderPipelineLayoutDesc = {
-            bindGroupLayouts: [this.renderBindGroupLayout],
-        };
-        const renderLayout = this.device.createPipelineLayout(
-            renderPipelineLayoutDesc
-        );
+      vertex,
+      fragment,
 
-        const vertex: GPUVertexState = {
-            module: renderShaderModule,
-            entryPoint: "vs_main",
-        };
+      primitive,
+    }
+    this.renderPipeline =
+      await this.device.createRenderPipelineAsync(renderPipelineDesc)
+  }
 
-        const colorState: GPUColorTargetState = {
-            format: "bgra8unorm",
-        };
+  resizeBackings = () => {
+    if (!this.context) {
+      this.context = ((context) => {
+        if (context === null) throw new Error('Failed to get canvas context')
+        else return context
+      })(this.canvas.getContext('webgpu'))
+      const canvasConfig: GPUCanvasConfiguration = {
+        device: this.device,
+        format: 'bgra8unorm',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+        alphaMode: 'opaque',
+      }
+      this.context.configure(canvasConfig)
+    }
+  }
 
-        const fragment: GPUFragmentState = {
-            module: renderShaderModule,
-            entryPoint: "fs_main",
-            targets: [colorState],
-        };
+  setComputeBindGroup = () => {
+    this.screenResolutionBuffer = this.createBuffer(
+      new Float32Array([this.canvas.width, this.canvas.height]),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Screen Resolution Buffer'
+    )
+    this.rayOriginBuffer = this.createBuffer(
+      new Float32Array(this.camera.position),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Ray Origin Buffer'
+    )
+    this.cameraBuffer = this.createBuffer(
+      new Float32Array(
+        // @ts-ignore
+        this.camera.inverseProjection.concat(this.camera.inverseView)
+      ),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Camera Buffer'
+    )
+    this.materialsBuffer = this.createBuffer(
+      new Float32Array(this.scene.materialsBuffer),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Material Buffer'
+    )
+    this.sphereBuffer = this.createBuffer(
+      new Float32Array(this.scene.spheresBuffer),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Sphere Buffer'
+    )
+    this.scenePropsBuffer = this.createBuffer(
+      new Float32Array(Object.values(this.sceneProps)),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Scene Props Buffer'
+    )
+    this.randomSeedBuffer = this.createBuffer(
+      new Float32Array([Math.random()]),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Random Seed Buffer'
+    )
+    this.accumulationsBuffer = this.createBuffer(
+      new Float32Array([this.accumulations]),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Accumulations Buffer'
+    )
 
-        const primitive: GPUPrimitiveState = {
-            frontFace: "ccw",
-            cullMode: "none",
-            topology: "triangle-list",
-        };
-        const renderPipelineDesc: GPURenderPipelineDescriptor = {
-            layout: renderLayout,
+    this.computeBindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'storage' },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 3,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 4,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 5,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 6,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 7,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 8,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 9,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'storage' },
+        },
+      ],
+    })
 
-            vertex,
-            fragment,
+    this.computeBindGroup = this.device.createBindGroup({
+      layout: this.computeBindGroupLayout,
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.pixelColorsBuffer,
+          },
+        },
+        {
+          binding: 1,
+          resource: {
+            buffer: this.screenResolutionBuffer,
+          },
+        },
+        {
+          binding: 2,
+          resource: {
+            buffer: this.rayOriginBuffer,
+          },
+        },
+        {
+          binding: 3,
+          resource: {
+            buffer: this.cameraBuffer,
+          },
+        },
+        {
+          binding: 4,
+          resource: {
+            buffer: this.materialsBuffer,
+          },
+        },
+        {
+          binding: 5,
+          resource: {
+            buffer: this.sphereBuffer,
+          },
+        },
+        {
+          binding: 6,
+          resource: {
+            buffer: this.scenePropsBuffer,
+          },
+        },
+        {
+          binding: 7,
+          resource: {
+            buffer: this.randomSeedBuffer,
+          },
+        },
+        {
+          binding: 8,
+          resource: {
+            buffer: this.accumulationsBuffer,
+          },
+        },
+        {
+          binding: 9,
+          resource: {
+            buffer: this.accumulationColorsBuffer,
+          },
+        },
+      ],
+    })
+  }
 
-            primitive,
-        };
-        this.renderPipeline = await this.device.createRenderPipelineAsync(
-            renderPipelineDesc
-        );
-    };
+  setRenderBindGroup = () => {
+    this.screenResolutionBuffer = this.createBuffer(
+      new Float32Array([this.canvas.width, this.canvas.height]),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Screen Resolution Buffer'
+    )
+    this.accumulationsBuffer = this.createBuffer(
+      new Float32Array([this.accumulations]),
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Accumulations Buffer'
+    )
 
-    resizeBackings = () => {
-        if (!this.context) {
-            this.context = ((context) => {
-                if (context === null) throw new Error("Failed to get canvas context");
-                else return context;
-            })(this.canvas.getContext("webgpu"));
-            const canvasConfig: GPUCanvasConfiguration = {
-                device: this.device,
-                format: "bgra8unorm",
-                usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-                alphaMode: "opaque",
-            };
-            this.context.configure(canvasConfig);
-        }
-    };
+    this.renderBindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: 'read-only-storage' },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: 'uniform' },
+        },
+      ],
+    })
 
-    setComputeBindGroup = () => {
-        this.screenResolutionBuffer = this.createBuffer(
-            new Float32Array([this.canvas.width, this.canvas.height]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Screen Resolution Buffer"
-        );
-        this.rayOriginBuffer = this.createBuffer(
-            new Float32Array(this.camera.position),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Camera Position Buffer"
-        );
-        this.cameraBuffer = this.createBuffer(
-            new Float32Array(
-                // @ts-ignore
-                this.camera.inverseProjection.concat(this.camera.inverseView)
-            ),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Camera Buffer"
-        );
-        this.materialsBuffer = this.createBuffer(
-            new Float32Array(this.scene.materialsBuffer),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Material Buffer"
-        );
-        this.sphereBuffer = this.createBuffer(
-            new Float32Array(this.scene.spheresBuffer),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Sphere Position Buffer"
-        );
-        this.lightDirBuffer = this.createBuffer(
-            new Float32Array(this.scene.lightDirBuffer),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Camera Position Buffer"
-        );
-        this.randomSeed = this.createBuffer(
-            new Float32Array([Math.random()]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Camera Position Buffer"
-        );
-        this.accumulationsBuffer = this.createBuffer(
-            new Float32Array([this.accumulations]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Camera Position Buffer"
-        );
+    this.renderBindGroup = this.device.createBindGroup({
+      layout: this.renderBindGroupLayout,
+      entries: [
+        {
+          binding: 0,
+          resource: { buffer: this.pixelColorsBuffer },
+        },
+        {
+          binding: 1,
+          resource: { buffer: this.screenResolutionBuffer },
+        },
+      ],
+    })
+  }
 
-        this.computeBindGroupLayout = this.device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "storage" },
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "uniform" },
-                },
-                {
-                    binding: 2,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "uniform" },
-                },
-                {
-                    binding: 3,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "uniform" },
-                },
-                {
-                    binding: 4,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "uniform" },
-                },
-                {
-                    binding: 5,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "uniform" },
-                },
-                {
-                    binding: 6,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "uniform" },
-                },
-                {
-                    binding: 7,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "uniform" },
-                },
-                {
-                    binding: 8,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "uniform" },
-                },
-                {
-                    binding: 9,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "storage" },
-                },
-            ],
-        });
+  computePass = () => {
+    // TODO: get clever and only update this stuff when it changes
+    this.setComputeBindGroup()
+    this.commandEncoder = this.device.createCommandEncoder()
+    const passEncoder = this.commandEncoder.beginComputePass()
+    passEncoder.setPipeline(this.computePipeline)
+    passEncoder.setBindGroup(0, this.computeBindGroup)
+    passEncoder.dispatchWorkgroups(
+      Math.ceil((this.canvas.width * this.canvas.height) / 64)
+    )
+    passEncoder.end()
+  }
 
-        this.computeBindGroup = this.device.createBindGroup({
-            layout: this.computeBindGroupLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: {
-                        buffer: this.pixelColorsBuffer,
-                    },
-                },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: this.screenResolutionBuffer,
-                    },
-                },
-                {
-                    binding: 2,
-                    resource: {
-                        buffer: this.rayOriginBuffer,
-                    },
-                },
-                {
-                    binding: 3,
-                    resource: {
-                        buffer: this.cameraBuffer,
-                    },
-                },
-                {
-                    binding: 4,
-                    resource: {
-                        buffer: this.materialsBuffer,
-                    },
-                },
-                {
-                    binding: 5,
-                    resource: {
-                        buffer: this.sphereBuffer,
-                    },
-                },
-                {
-                    binding: 6,
-                    resource: {
-                        buffer: this.lightDirBuffer,
-                    },
-                },
-                {
-                    binding: 7,
-                    resource: {
-                        buffer: this.randomSeed,
-                    },
-                },
-                {
-                    binding: 8,
-                    resource: {
-                        buffer: this.accumulationsBuffer,
-                    },
-                },
-                {
-                    binding: 9,
-                    resource: {
-                        buffer: this.accumulationColorsBuffer,
-                    },
-                },
-            ],
-        });
-    };
+  renderPass = () => {
+    this.setRenderBindGroup()
+    const passEncoder = this.commandEncoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: this.colorTextureView,
+          clearValue: { r: 0, g: 0, b: 1, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    passEncoder.setPipeline(this.renderPipeline)
+    passEncoder.setBindGroup(0, this.renderBindGroup)
+    passEncoder.draw(6, 1, 0, 0)
+    passEncoder.end()
+  }
 
-    setRenderBindGroup = () => {
-        this.screenResolutionBuffer = this.createBuffer(
-            new Float32Array([this.canvas.width, this.canvas.height]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Screen Resolution Buffer"
-        );
-        this.accumulationsBuffer = this.createBuffer(
-            new Float32Array([this.accumulations]),
-            GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            undefined,
-            "Accumulations Buffer"
-        );
+  perfTime = performance.now()
+  perfTimeLogs: number[] = []
+  fpsElement = document.getElementById('fps')
+  rendertimeElement = document.getElementById('rendertime')
+  accumulationsElement = document.getElementById('accumulations')
 
-        this.renderBindGroupLayout = this.device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.FRAGMENT,
-                    buffer: { type: "read-only-storage" },
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.FRAGMENT,
-                    buffer: { type: "uniform" },
-                },
-            ],
-        });
+  frame = () => {
+    this.colorTexture = this.context.getCurrentTexture()
+    this.colorTextureView = this.colorTexture.createView()
 
-        this.renderBindGroup = this.device.createBindGroup({
-            layout: this.renderBindGroupLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: { buffer: this.pixelColorsBuffer },
-                },
-                {
-                    binding: 1,
-                    resource: { buffer: this.screenResolutionBuffer },
-                },
-            ],
-        });
-    };
+    this.camera.updatePos()
+    // this.scene.updateSpheres();
+    this.scene.updateSpheresBuffer()
 
-    computePass = () => {
-        // TODO: get clever and only update this stuff when it changes
-        this.setComputeBindGroup();
-        this.commandEncoder = this.device.createCommandEncoder();
-        const passEncoder = this.commandEncoder.beginComputePass();
-        passEncoder.setPipeline(this.computePipeline);
-        passEncoder.setBindGroup(0, this.computeBindGroup);
-        passEncoder.dispatchWorkgroups(
-            Math.ceil((this.canvas.width * this.canvas.height) / 64)
-        );
-        passEncoder.end();
-    };
+    this.accumulations++
+    if (this.camera.move) {
+      this.accumulations = 0
+    }
 
-    renderPass = () => {
-        this.setRenderBindGroup();
-        const passEncoder = this.commandEncoder.beginRenderPass({
-            colorAttachments: [
-                {
-                    view: this.colorTextureView,
-                    clearValue: { r: 0, g: 0, b: 1, a: 1 },
-                    loadOp: "clear",
-                    storeOp: "store",
-                },
-            ],
-        });
-        passEncoder.setPipeline(this.renderPipeline);
-        passEncoder.setBindGroup(0, this.renderBindGroup);
-        passEncoder.draw(6, 1, 0, 0);
-        passEncoder.end();
-    };
 
-    perfTime = performance.now();
-    perfTimeLogs: number[] = [];
-    fpsElement = document.getElementById("fps");
-    rendertimeElement = document.getElementById("rendertime");
-    accumulationsElement = document.getElementById("accumulations");
+    this.computePass()
+    this.renderPass()
 
-    frame = () => {
-        this.colorTexture = this.context.getCurrentTexture();
-        this.colorTextureView = this.colorTexture.createView();
+    this.queue.submit([this.commandEncoder.finish()])
 
-        this.camera.updatePos();
-        // this.scene.updateSpheres();
-        this.scene.updateSpheresBuffer();
+    if (
+      this.fpsElement &&
+      this.rendertimeElement &&
+      this.accumulationsElement
+    ) {
+      this.accumulationsElement.innerText = `${this.accumulations} samples`
 
-        this.accumulationsElement.innerText = `${this.accumulations} samples`
-        this.accumulations++;
-        if (this.camera.move) {
-            this.accumulations = 0;
-        }
+      let newPerfTime = performance.now()
+      this.perfTimeLogs.push(newPerfTime - this.perfTime)
 
-        this.computePass();
-        this.renderPass();
+      let averagePerfTime =
+        this.perfTimeLogs.reduce((a, b) => a + b) / this.perfTimeLogs.length
 
-        this.queue.submit([this.commandEncoder.finish()]);
+      // update DOM text
+      this.fpsElement.innerText = `${(1000 / averagePerfTime).toFixed(0)}fps`
+      this.rendertimeElement.innerText = `${averagePerfTime.toFixed(
+        0
+      )}ms render time`
 
-        if (this.fpsElement && this.rendertimeElement) {
-            let newPerfTime = performance.now();
-            this.perfTimeLogs.push(newPerfTime - this.perfTime);
+      while (this.perfTimeLogs.length > 25) this.perfTimeLogs.shift()
+      this.perfTime = newPerfTime
+    }
 
-            let averagePerfTime =
-                this.perfTimeLogs.reduce((a, b) => a + b) / this.perfTimeLogs.length;
-
-            // update DOM text
-            this.fpsElement.innerText = `${(1000 / averagePerfTime).toFixed(0)}fps`;
-            this.rendertimeElement.innerText = `${averagePerfTime.toFixed(
-                0
-            )}ms render time`;
-
-            while (this.perfTimeLogs.length > 25) this.perfTimeLogs.shift();
-            this.perfTime = newPerfTime;
-        }
-
-        if (this.running) requestAnimationFrame(this.frame);
-    };
+    if (this.running) requestAnimationFrame(this.frame)
+  }
 }

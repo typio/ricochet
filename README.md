@@ -2,9 +2,9 @@
 
 > Ray Tracing Renderer
 
-## Screenshot
-
-<img width="1198" alt="Screenshot 2023-12-12 at 5 36 54 PM" src="https://github.com/typio/ricochet/assets/26017543/ed385f07-eead-4cc7-8875-293c84509b80">
+## Screenshots
+<img width="1198" alt="High Sample Render" src="https://github.com/typio/ricochet/assets/26017543/ed385f07-eead-4cc7-8875-293c84509b80">
+<img width="1198" alt="Low Sample Render" src="https://github.com/typio/ricochet/assets/26017543/28f2ed5c-daac-4988-8829-7acc6b2a8af9">
 
 ## References
 
