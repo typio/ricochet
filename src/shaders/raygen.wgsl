@@ -1,7 +1,8 @@
 const SAMPLES = 2; // Isn't this redundant with frame accumulation?
-const MATERIAL_COUNT = 6;
-const SPHERE_COUNT = 6;
-const BOUNCES = 20;
+const RAY_SPREAD = 0.3;
+const MATERIAL_COUNT = 100;
+const SPHERE_COUNT = 70;
+const BOUNCES = 10;
 
 const gamma = 1 / 2.2;
 
@@ -17,9 +18,10 @@ struct Camera {
 
 struct Material {
   albedo: vec3<f32>, 
+  spacer: f32,
   roughness: f32,            
   metallic: f32,                // everything is metaliic
-  spacer: vec2<f32>,            // NOTE: Alignment of vec3<f32> is 16bytes so the 4 bytes following it aren't accessible
+  spacer2: vec2<f32>,            // NOTE: Alignment of vec3<f32> is 16bytes so the 4 bytes following it aren't accessible
   emission_color: vec3<f32>,
   emission_intensity: f32,
 }
@@ -150,9 +152,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   let rayDirection = calculate_ray_direction(coords);
 
   var light = vec3<f32>(0., 0., 0.);
-  var contribution = vec3<f32>(1., 1.0, 1.0);
 
   for (var sample = 0u; sample < SAMPLES; sample++) {
+  var contribution = vec3<f32>(1., 1., 1.); // Reset contribution for each sample
     var ray: Ray;
     ray.direction = rayDirection;
     ray.origin = rayOrigin;
@@ -160,59 +162,47 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
       // offsets ray start position across samples for anti-alias effect
       // constant factor seems bad, but no other option? 
-      ray.origin += rand(global_id.x + i, random_seed) * 0.03; 
+      ray.origin += (rand(global_id.x * i, random_seed) - 0.5) * RAY_SPREAD;
 
       let rayPayload: RayPayload = trace_ray(ray);
       if (rayPayload.hitDistance == -1.) { // it didn't hit anything
-          // light += vec3(0.53, 0.8, 0.92) * contribution; // hit a background
-          break;
+        // light += vec3(0.53, 0.8, 0.92) * contribution; // hit background
+        break;
       }
-
 
       let sphere = spheres[rayPayload.objectIndex];
-      let material = materials[u32(sphere.material_index)];
+      let hitMaterial = materials[u32(sphere.material_index)];
 
-      // this isn't correct, for one - albedo changes emitted light color
-      light = contribution * material.albedo;
-      contribution *= material.albedo;
-      light += material.emission_color * material.emission_intensity;
-      if (i >= 1 || material.emission_intensity < 1) {
-        light *= contribution;
+      light += contribution * hitMaterial.emission_color * hitMaterial.emission_intensity;
+
+      if (hitMaterial.emission_intensity > 0.0) {
+        break;
       }
+
+      contribution *= hitMaterial.albedo;
 
       // move ray to hit for next, but a lil away so it doesnt collide with the inside
       ray.origin = rayPayload.worldPosition + rayPayload.worldNormal * 0.0001;
 
-      var new_normal = rayPayload.worldNormal;
+      let reflectedDirection = reflect(ray.direction, rayPayload.worldNormal);
 
-      // add roughness
-      // new_normal += roughness * (rand(global_id.x, random_seed) - 0.5);
+      let randomVector = normalize(vec3(rand(global_id.x + i, random_seed) - 0.5, 
+                                        rand(global_id.x * 2 + i, random_seed) - 0.5, 
+                                        rand(global_id.x * 3 + i, random_seed) - 0.5));
 
-      // v - 2*dot(v,n)*n;
-      // reflect
-      ray.direction = ray.direction - 2.0 * dot(ray.direction, rayPayload.worldNormal) * rayPayload.worldNormal;
-      let fuzz = (material.roughness * sphere.r * (rand(global_id.x + i , random_seed) - 0.5));
-      ray.direction = ray.direction + fuzz;
-
-      let random = (rand(global_id.x + i , random_seed) - 0.5);
-      let random2 = (rand(global_id.x * 2 + i, random_seed) - 0.5);
-      let random3 = (rand(global_id.x * 3 + i , random_seed) - 0.5);
-
-      ray.direction = normalize(normalize(vec3( random, random2, random3)) + rayPayload.worldNormal);
-      //ray.direction = ray.direction - 2.0 *
-      //  dot(new_normal, ray.direction) *
-      //  new_normal;
+      ray.direction = normalize(mix(reflectedDirection, randomVector, hitMaterial.roughness));
+      ray.direction = normalize(ray.direction + rayPayload.worldNormal);
     }
   }
-   light /= SAMPLES;
-   light = pow(light, vec3(gamma, gamma, gamma));
+
+  var finalColor = light / SAMPLES;
+  finalColor = pow(finalColor, vec3(gamma, gamma, gamma)); // gamma correction
 
   if (accumulations > 1) {
-      accumulationColors[global_id.x] += light;
-      pixelColors[global_id.x] = accumulationColors[global_id.x] / accumulations;
+    let blendFactor = 1.0 / accumulations;
+    pixelColors[global_id.x] = mix(pixelColors[global_id.x], finalColor, blendFactor);
   } else {
-      accumulationColors[global_id.x] = light;
-      pixelColors[global_id.x] = light;
+    pixelColors[global_id.x] = finalColor;
   }
 
   return;

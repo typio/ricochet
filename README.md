@@ -1,10 +1,10 @@
 # ricochet
 
-> Real-Time Ray Tracing Renderer
+> Ray Tracing Renderer
 
-## Screenshots
+## Screenshot
 
-![Screenshot](https://user-images.githubusercontent.com/26017543/234991578-ae5e5c14-26c1-473e-a4a7-700d12690c6a.png)
+<img width="1198" alt="Screenshot 2023-12-12 at 5 36 54 PM" src="https://github.com/typio/ricochet/assets/26017543/ed385f07-eead-4cc7-8875-293c84509b80">
 
 ## References
 

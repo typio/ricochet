@@ -482,6 +482,7 @@ export default class Renderer {
     perfTimeLogs: number[] = [];
     fpsElement = document.getElementById("fps");
     rendertimeElement = document.getElementById("rendertime");
+    accumulationsElement = document.getElementById("accumulations");
 
     frame = () => {
         this.colorTexture = this.context.getCurrentTexture();
@@ -491,6 +492,7 @@ export default class Renderer {
         // this.scene.updateSpheres();
         this.scene.updateSpheresBuffer();
 
+        this.accumulationsElement.innerText = `${this.accumulations} samples`
         this.accumulations++;
         if (this.camera.move) {
             this.accumulations = 0;
@@ -510,9 +512,9 @@ export default class Renderer {
 
             // update DOM text
             this.fpsElement.innerText = `${(1000 / averagePerfTime).toFixed(0)}fps`;
-            this.rendertimeElement.innerText = `render time: ${averagePerfTime.toFixed(
-                1
-            )}ms`;
+            this.rendertimeElement.innerText = `${averagePerfTime.toFixed(
+                0
+            )}ms render time`;
 
             while (this.perfTimeLogs.length > 25) this.perfTimeLogs.shift();
             this.perfTime = newPerfTime;
