@@ -27,11 +27,12 @@ export default class Renderer {
   accumulations: number
 
   accumulationsBuffer: GPUBuffer
-  accumulationColorsBuffer: GPUBuffer
   rayOriginBuffer: GPUBuffer
   cameraBuffer: GPUBuffer
   materialsBuffer: GPUBuffer
   sphereBuffer: GPUBuffer
+  vertexBuffer: GPUBuffer
+  triangleBuffer: GPUBuffer
   scenePropsBuffer: GPUBuffer
   screenResolutionBuffer: GPUBuffer
   pixelColorsBuffer: GPUBuffer
@@ -63,7 +64,8 @@ export default class Renderer {
 
     this.sceneProps = {
       sunIntensity: 0,
-      spheres: 40,
+      lightsIntensity: 10,
+      spheres: 20,
       rayOffset: 0,
       rayBounces: 4,
     }
@@ -91,6 +93,11 @@ export default class Renderer {
             if (inputId == 'sunIntensity') {
               this.scene.materialsBuffer[11] = (Number(target.value) / 100) ** 2
             }
+
+            if (inputId == 'lightsIntensity') {
+              this.scene.materialsBuffer[35] = Number(target.value) ** 3
+            }
+
             this.accumulations = 0
           })
         }
@@ -174,15 +181,6 @@ export default class Renderer {
         Float32Array.BYTES_PER_ELEMENT,
       'Pixel Colors Buffer'
     )
-    this.accumulationColorsBuffer = this.createBuffer(
-      new Float32Array([]),
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-      this.canvas.width *
-        this.canvas.height *
-        4 *
-        Float32Array.BYTES_PER_ELEMENT,
-      'Pixel Colors Buffer'
-    )
     this.setComputeBindGroup()
 
     const raygenShaderModule = this.device.createShaderModule({
@@ -234,6 +232,7 @@ export default class Renderer {
       cullMode: 'none',
       topology: 'triangle-list',
     }
+
     const renderPipelineDesc: GPURenderPipelineDescriptor = {
       layout: renderLayout,
 
@@ -285,16 +284,28 @@ export default class Renderer {
       'Camera Buffer'
     )
     this.materialsBuffer = this.createBuffer(
-      new Float32Array(this.scene.materialsBuffer),
+      this.scene.materialsBuffer,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       undefined,
       'Material Buffer'
     )
     this.sphereBuffer = this.createBuffer(
-      new Float32Array(this.scene.spheresBuffer),
+      this.scene.sphereBuffer,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       undefined,
       'Sphere Buffer'
+    )
+    this.vertexBuffer = this.createBuffer(
+      this.scene.vertexBuffer,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Vertex Buffer'
+    )
+    this.triangleBuffer = this.createBuffer(
+      this.scene.triangleBuffer,
+      GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      undefined,
+      'Triangle Buffer'
     )
     this.scenePropsBuffer = this.createBuffer(
       new Float32Array(Object.values(this.sceneProps)),
@@ -365,7 +376,12 @@ export default class Renderer {
         {
           binding: 9,
           visibility: GPUShaderStage.COMPUTE,
-          buffer: { type: 'storage' },
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 10,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
         },
       ],
     })
@@ -412,25 +428,31 @@ export default class Renderer {
         {
           binding: 6,
           resource: {
-            buffer: this.scenePropsBuffer,
+            buffer: this.vertexBuffer,
           },
         },
         {
           binding: 7,
           resource: {
-            buffer: this.randomSeedBuffer,
+            buffer: this.triangleBuffer,
           },
         },
         {
           binding: 8,
           resource: {
-            buffer: this.accumulationsBuffer,
+            buffer: this.scenePropsBuffer,
           },
         },
         {
           binding: 9,
           resource: {
-            buffer: this.accumulationColorsBuffer,
+            buffer: this.randomSeedBuffer,
+          },
+        },
+        {
+          binding: 10,
+          resource: {
+            buffer: this.accumulationsBuffer,
           },
         },
       ],
@@ -524,13 +546,13 @@ export default class Renderer {
 
     this.camera.updatePos()
     // this.scene.updateSpheres();
-    this.scene.updateSpheresBuffer()
+    // this.scene.updateSphereBuffer()
+    // this.scene.updateTriangleBuffer()
 
     this.accumulations++
     if (this.camera.move) {
       this.accumulations = 0
     }
-
 
     this.computePass()
     this.renderPass()

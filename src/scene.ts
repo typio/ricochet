@@ -4,6 +4,16 @@ interface Sphere {
   materialIndex: number
 }
 
+interface Vertex {
+  v: [number, number, number]
+}
+
+interface Triangle {
+  v0: number
+  v1: number
+  v2: number
+}
+
 interface Material {
   albedo: [number, number, number]
   roughness: number
@@ -15,11 +25,13 @@ interface Material {
 export default class Scene {
   materials: Material[]
   spheres: Sphere[]
-  lightDir: [number, number, number]
+  vertices: Vertex[]
+  triangles: Triangle[]
 
   materialsBuffer: Float32Array
-  spheresBuffer: Float32Array
-  lightDirBuffer: Float32Array
+  sphereBuffer: Float32Array
+  vertexBuffer: Float32Array
+  triangleBuffer: Uint16Array
 
   constructor() {
     // @ts-ignore
@@ -38,6 +50,13 @@ export default class Scene {
         emisssionColor: [0, 0, 0],
         emissionIntensity: 0,
       }, // Ground
+      {
+        albedo: [1, 1, 1],
+        roughness: 1,
+        metallic: 1.0,
+        emisssionColor: [1, 1, 1],
+        emissionIntensity: 1000,
+      }, // Light
     ].concat(
       Array.from({ length: 98 }, (_) => {
         let bigRandom = 0.8 + Math.random() * 0.2
@@ -50,10 +69,10 @@ export default class Scene {
 
         return {
           albedo,
-          roughness: albedo == gold ? 0 :Math.round(Math.random()),
+          roughness: albedo == gold ? 0 : Math.round(Math.random()),
           metallic: 1,
           emisssionColor: [1, 1, 1],
-          emissionIntensity: Math.random() > 0.85 ? 1000 : 0,
+          emissionIntensity: 0,
         }
       })
     )
@@ -72,16 +91,70 @@ export default class Scene {
         return {
           position: [x, y, z],
           radius: r * Math.random(),
-          materialIndex: (i % this.materials.length) + 2,
+          materialIndex:
+            Math.random() > 0.85 ? 2 : (i % this.materials.length) + 2,
         }
       })
     )
 
-    this.lightDir = [1, 1, 1]
+    this.vertices = [
+      // Top and bottom vertices
+      { v: [0, 5, -150] }, // 0
+      { v: [0, -5, -150] }, // 1
 
-    this.updateLightDirBuffer()
+      // Upper ring vertices
+      { v: [-4.75, 1.5, -150] }, // 2
+      { v: [-3, 1.5, -155.5] }, // 3
+      { v: [3, 1.5, -155.5] }, // 4
+      { v: [4.75, 1.5, -150] }, // 5
+      { v: [3, 1.5, -144.5] }, // 6
+      { v: [-3, 1.5, -144.5] }, // 7
+
+      // Lower ring vertices
+      { v: [-4.75, -1.5, -150] }, // 8
+      { v: [-3, -1.5, -155.5] }, // 9
+      { v: [3, -1.5, -155.5] }, // 10
+      { v: [4.75, -1.5, -150] }, // 11
+      { v: [3, -1.5, -144.5] }, // 12
+      { v: [-3, -1.5, -144.5] }, // 13
+    ]
+
+    this.triangles = [
+      // Upper triangles
+      { v0: 0, v1: 2, v2: 3 },
+      { v0: 0, v1: 3, v2: 4 },
+      { v0: 0, v1: 4, v2: 5 },
+      { v0: 0, v1: 5, v2: 6 },
+      { v0: 0, v1: 6, v2: 7 },
+      { v0: 0, v1: 7, v2: 2 },
+
+      // Middle triangles
+      { v0: 2, v1: 7, v2: 13 },
+      { v0: 2, v1: 13, v2: 8 },
+      { v0: 3, v1: 2, v2: 8 },
+      { v0: 3, v1: 8, v2: 9 },
+      { v0: 4, v1: 3, v2: 9 },
+      { v0: 4, v1: 9, v2: 10 },
+      { v0: 5, v1: 4, v2: 10 },
+      { v0: 5, v1: 10, v2: 11 },
+      { v0: 6, v1: 5, v2: 11 },
+      { v0: 6, v1: 11, v2: 12 },
+      { v0: 7, v1: 6, v2: 12 },
+      { v0: 7, v1: 12, v2: 13 },
+
+      // Lower triangles
+      { v0: 1, v1: 9, v2: 8 },
+      { v0: 1, v1: 10, v2: 9 },
+      { v0: 1, v1: 11, v2: 10 },
+      { v0: 1, v1: 12, v2: 11 },
+      { v0: 1, v1: 13, v2: 12 },
+      { v0: 1, v1: 8, v2: 13 },
+    ]
+
     this.updateMaterialsBuffer()
-    this.updateSpheresBuffer()
+    this.updateSphereBuffer()
+    this.updateVertexBuffer()
+    this.updateTriangleBuffer()
   }
 
   startTime = performance.now()
@@ -114,8 +187,9 @@ export default class Scene {
     this.materialsBuffer = new Float32Array(materialsArray)
   }
 
-  updateSpheresBuffer = () => {
-    let spheresArray = new Array(8 * this.spheres.length).fill(0)
+  updateSphereBuffer = () => {
+    let count = this.spheres.length
+    let spheresArray = new Array(8 * count).fill(0)
 
     for (let i = 0; i < this.spheres.length; i++) {
       for (let p = 0; p < 3; p++) {
@@ -125,10 +199,34 @@ export default class Scene {
       spheresArray[i * 8 + 4] = this.spheres[i].materialIndex
     }
 
-    this.spheresBuffer = new Float32Array(spheresArray)
+    this.sphereBuffer = new Float32Array(spheresArray)
   }
 
-  updateLightDirBuffer = () => {
-    this.lightDirBuffer = new Float32Array(this.lightDir)
+  updateTriangleBuffer = () => {
+    let count = 100
+    let offset = 8
+    let triangleArray = new Array(offset * count).fill(0)
+
+    for (let i = 0; i < this.triangles.length; i++) {
+      triangleArray[i * offset] = this.triangles[i].v0
+      triangleArray[i * offset + 2] = this.triangles[i].v1
+      triangleArray[i * offset + 4] = this.triangles[i].v2
+    }
+
+    this.triangleBuffer = new Uint16Array(triangleArray)
+  }
+
+  updateVertexBuffer = () => {
+    let count = 100
+    let offset = 4
+    let vertexArray = new Array(offset * count).fill(0)
+
+    for (let i = 0; i < this.vertices.length; i++) {
+      vertexArray[i * offset] = this.vertices[i].v[0]
+      vertexArray[i * offset + 1] = this.vertices[i].v[1]
+      vertexArray[i * offset + 2] = this.vertices[i].v[2]
+    }
+
+    this.vertexBuffer = new Float32Array(vertexArray)
   }
 }
