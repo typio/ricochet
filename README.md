@@ -9,6 +9,7 @@
 ## References
 
 - [Introduction to DirectX Raytracing - Chris W. and Shawn H. and Peter S. and Colin B.B.](http://intro-to-dxr.cwyman.org/)
+- [Physically Based Rendering: From Theory To Implementation - Matt Pharr, Wenzel Jakob, and Greg Humphreys](https://pbr-book.org/4ed/contents)
 - [Ray Tracing Book Series - Peter Shirley](https://raytracing.github.io/)
 - [Ray Tracing YouTube Series - The Cherno](https://youtu.be/gfW1Fhd9u9Q)
 - [Scratchapixel](https://scratchapixel.com/index.html)
